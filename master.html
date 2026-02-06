@@ -1,0 +1,707 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Installation – Master Control</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;700&family=Space+Mono:wght@400;700&display=swap');
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  :root {
+    --bg: #0c0c0e;
+    --surface: #16161a;
+    --border: #2a2a30;
+    --text: #e0e0e0;
+    --text-dim: #666;
+    --accent: #c8f540;
+    --accent-dim: #4a5a1a;
+    --danger: #ff4444;
+    --success: #2ecc40;
+  }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 13px;
+    min-height: 100vh;
+  }
+
+  /* --- Header --- */
+  header {
+    padding: 20px 30px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  header h1 {
+    font-size: 14px;
+    font-weight: 500;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    color: var(--accent);
+  }
+
+  #connection-status {
+    font-size: 11px;
+    color: var(--text-dim);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  #connection-status .dot {
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: var(--danger);
+  }
+  #connection-status .dot.ok { background: var(--success); }
+
+  /* --- Layout --- */
+  .layout {
+    display: grid;
+    grid-template-columns: 300px 1fr;
+    min-height: calc(100vh - 61px);
+  }
+
+  /* --- Sidebar: Client list --- */
+  .sidebar {
+    border-right: 1px solid var(--border);
+    padding: 20px;
+    overflow-y: auto;
+  }
+
+  .sidebar h2 {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.2em;
+    color: var(--text-dim);
+    margin-bottom: 15px;
+  }
+
+  .client-item {
+    padding: 10px 12px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    margin-bottom: 8px;
+    cursor: pointer;
+    transition: all 0.2s;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .client-item:hover { border-color: var(--accent); }
+  .client-item.selected {
+    border-color: var(--accent);
+    background: var(--accent-dim);
+  }
+  .client-item .client-name { font-size: 12px; }
+  .client-item .client-id { font-size: 10px; color: var(--text-dim); }
+
+  .no-clients {
+    color: var(--text-dim);
+    font-size: 11px;
+    font-style: italic;
+    padding: 20px 0;
+    text-align: center;
+  }
+
+  .target-label {
+    display: inline-block;
+    padding: 3px 8px;
+    border-radius: 3px;
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    margin-top: 15px;
+    margin-bottom: 5px;
+  }
+  .target-all {
+    background: var(--accent-dim);
+    color: var(--accent);
+  }
+  .target-single {
+    background: rgba(100,100,255,0.15);
+    color: #8888ff;
+  }
+
+  #select-all-btn {
+    width: 100%;
+    padding: 8px;
+    border: 1px dashed var(--border);
+    border-radius: 6px;
+    background: transparent;
+    color: var(--text-dim);
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 11px;
+    margin-bottom: 8px;
+    transition: all 0.2s;
+  }
+  #select-all-btn:hover {
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+  #select-all-btn.selected {
+    border-color: var(--accent);
+    background: var(--accent-dim);
+    color: var(--accent);
+    border-style: solid;
+  }
+
+  /* --- Main panel --- */
+  .main {
+    padding: 30px;
+    overflow-y: auto;
+  }
+
+  /* --- Sections --- */
+  .section {
+    margin-bottom: 30px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    overflow: hidden;
+  }
+
+  .section-header {
+    padding: 12px 16px;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.15em;
+    color: var(--text-dim);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  .section-body {
+    padding: 16px;
+  }
+
+  /* --- Form elements --- */
+  textarea, input[type="text"], input[type="url"], input[type="number"] {
+    width: 100%;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 10px 12px;
+    color: var(--text);
+    font-family: inherit;
+    font-size: 13px;
+    resize: vertical;
+    outline: none;
+    transition: border-color 0.2s;
+  }
+  textarea:focus, input:focus {
+    border-color: var(--accent);
+  }
+  textarea { min-height: 80px; }
+
+  label {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.15em;
+    color: var(--text-dim);
+    display: block;
+    margin-bottom: 6px;
+    margin-top: 12px;
+  }
+  label:first-child { margin-top: 0; }
+
+  select {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 8px 10px;
+    color: var(--text);
+    font-family: inherit;
+    font-size: 12px;
+    outline: none;
+    cursor: pointer;
+  }
+
+  .row {
+    display: flex;
+    gap: 12px;
+    align-items: flex-end;
+  }
+  .row > * { flex: 1; }
+
+  /* --- Buttons --- */
+  button {
+    font-family: inherit;
+    cursor: pointer;
+  }
+
+  .btn {
+    padding: 10px 20px;
+    border: 1px solid var(--accent);
+    border-radius: 4px;
+    background: transparent;
+    color: var(--accent);
+    font-family: inherit;
+    font-size: 12px;
+    letter-spacing: 0.05em;
+    cursor: pointer;
+    transition: all 0.2s;
+    text-transform: uppercase;
+  }
+  .btn:hover {
+    background: var(--accent);
+    color: var(--bg);
+  }
+  .btn:active { transform: scale(0.97); }
+
+  .btn-danger {
+    border-color: var(--danger);
+    color: var(--danger);
+  }
+  .btn-danger:hover {
+    background: var(--danger);
+    color: white;
+  }
+
+  .btn-group {
+    display: flex;
+    gap: 8px;
+    margin-top: 12px;
+    flex-wrap: wrap;
+  }
+
+  .btn-small {
+    padding: 6px 12px;
+    font-size: 10px;
+  }
+
+  /* --- Effects row --- */
+  .effects-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+    gap: 8px;
+    margin-top: 8px;
+  }
+  .effect-btn {
+    padding: 12px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--surface);
+    color: var(--text);
+    font-family: inherit;
+    font-size: 11px;
+    text-align: center;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  .effect-btn:hover {
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+  .effect-btn .emoji { font-size: 20px; display: block; margin-bottom: 4px; }
+
+  /* --- Log --- */
+  #log {
+    font-size: 10px;
+    color: var(--text-dim);
+    max-height: 150px;
+    overflow-y: auto;
+    padding: 10px;
+    background: var(--bg);
+    border-radius: 4px;
+    border: 1px solid var(--border);
+  }
+  #log .entry { padding: 2px 0; }
+  #log .entry .time { color: var(--accent); margin-right: 8px; }
+
+  /* --- Color picker --- */
+  input[type="color"] {
+    width: 40px;
+    height: 34px;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    background: var(--bg);
+    cursor: pointer;
+    padding: 2px;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>🎛️ Installation Control</h1>
+  <div id="connection-status">
+    <span class="dot" id="ws-dot"></span>
+    <span id="ws-label">Verbinde...</span>
+  </div>
+</header>
+
+<div class="layout">
+  <!-- Sidebar: Clients -->
+  <div class="sidebar">
+    <h2>Verbundene Displays</h2>
+    <button id="select-all-btn" class="selected" onclick="selectAll()">
+      ✦ Alle Displays
+    </button>
+    <div id="client-list">
+      <div class="no-clients">Warte auf Verbindungen...</div>
+    </div>
+    <div style="margin-top: 15px;">
+      <span class="target-label" id="target-label"></span>
+    </div>
+  </div>
+
+  <!-- Main Panel -->
+  <div class="main">
+
+    <!-- TEXT -->
+    <div class="section">
+      <div class="section-header">
+        <span>Text senden</span>
+      </div>
+      <div class="section-body">
+        <label>Text</label>
+        <textarea id="text-input" placeholder="Text eingeben..."></textarea>
+
+        <div class="row">
+          <div>
+            <label>Animation</label>
+            <select id="text-style">
+              <option value="fade">Einblenden</option>
+              <option value="typewriter">Schreibmaschine</option>
+              <option value="slide">Hochschieben</option>
+            </select>
+          </div>
+          <div>
+            <label>Schriftgröße</label>
+            <select id="text-size">
+              <option value="1.2rem">Klein</option>
+              <option value="2rem" selected>Normal</option>
+              <option value="3.5rem">Groß</option>
+              <option value="6rem">Riesig</option>
+              <option value="10vw">Maximal</option>
+            </select>
+          </div>
+          <div>
+            <label>Farbe</label>
+            <input type="color" id="text-color" value="#ffffff">
+          </div>
+          <div>
+            <label>Position</label>
+            <select id="text-position">
+              <option value="center">Mitte</option>
+              <option value="top">Oben</option>
+              <option value="bottom">Unten</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="btn-group">
+          <button class="btn" onclick="sendText()">Senden</button>
+          <button class="btn btn-small" onclick="cascadeText()">Kaskade ▶▶</button>
+          <button class="btn btn-small" onclick="cascadeWords()">Wörter verteilen</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- IMAGE -->
+    <div class="section">
+      <div class="section-header">
+        <span>Bild senden</span>
+      </div>
+      <div class="section-body">
+        <label>Bild-URL</label>
+        <input type="url" id="image-url" placeholder="https://example.com/bild.jpg">
+
+        <div class="row">
+          <div>
+            <label>Darstellung</label>
+            <select id="image-fit">
+              <option value="contain">Einpassen</option>
+              <option value="cover">Füllen</option>
+            </select>
+          </div>
+          <div>
+            <label>Animation</label>
+            <select id="image-style">
+              <option value="fade">Einblenden</option>
+              <option value="slide">Hochschieben</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="btn-group">
+          <button class="btn" onclick="sendImage()">Senden</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- BACKGROUND COLOR -->
+    <div class="section">
+      <div class="section-header">
+        <span>Hintergrund</span>
+      </div>
+      <div class="section-body">
+        <div class="row">
+          <div>
+            <label>Farbe</label>
+            <input type="color" id="bg-color" value="#0a0a0a">
+          </div>
+          <div style="display: flex; align-items: flex-end;">
+            <button class="btn btn-small" onclick="sendColor()">Hintergrund ändern</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- EFFECTS -->
+    <div class="section">
+      <div class="section-header">
+        <span>Effekte</span>
+      </div>
+      <div class="section-body">
+        <div class="effects-grid">
+          <button class="effect-btn" onclick="sendEffect('pulse')">
+            <span class="emoji">💓</span> Pulsieren
+          </button>
+          <button class="effect-btn" onclick="sendEffect('glitch')">
+            <span class="emoji">⚡</span> Glitch
+          </button>
+          <button class="effect-btn" onclick="sendEffect('wave')">
+            <span class="emoji">🌊</span> Welle
+          </button>
+          <button class="effect-btn" onclick="sendEffect('flash')">
+            <span class="emoji">💥</span> Flash
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- CLEAR -->
+    <div class="section">
+      <div class="section-header">
+        <span>Steuerung</span>
+      </div>
+      <div class="section-body">
+        <div class="btn-group">
+          <button class="btn btn-danger" onclick="clearDisplays()">🗑 Alles löschen</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- LOG -->
+    <div class="section">
+      <div class="section-header">
+        <span>Log</span>
+        <button class="btn btn-small" onclick="document.getElementById('log').innerHTML=''">Leeren</button>
+      </div>
+      <div class="section-body">
+        <div id="log"></div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+let ws;
+let clients = [];
+let selectedTarget = 'all'; // 'all' or client id
+
+function connect() {
+  const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  ws = new WebSocket(`${protocol}//${location.host}?role=master`);
+
+  ws.onopen = () => {
+    document.getElementById('ws-dot').classList.add('ok');
+    document.getElementById('ws-label').textContent = 'Verbunden';
+    log('Master verbunden');
+  };
+
+  ws.onclose = () => {
+    document.getElementById('ws-dot').classList.remove('ok');
+    document.getElementById('ws-label').textContent = 'Getrennt – verbinde...';
+    setTimeout(connect, 2000);
+  };
+
+  ws.onerror = () => ws.close();
+
+  ws.onmessage = (event) => {
+    try {
+      const msg = JSON.parse(event.data);
+      if (msg.type === 'client-list') {
+        updateClientList(msg.clients);
+      }
+    } catch (e) {}
+  };
+}
+
+function send(msg) {
+  if (ws && ws.readyState === 1) {
+    ws.send(JSON.stringify(msg));
+    return true;
+  }
+  log('⚠ Nicht verbunden');
+  return false;
+}
+
+// --- Client list ---
+function updateClientList(newClients) {
+  clients = newClients;
+  const list = document.getElementById('client-list');
+
+  if (clients.length === 0) {
+    list.innerHTML = '<div class="no-clients">Warte auf Verbindungen...</div>';
+  } else {
+    list.innerHTML = clients.map(c => `
+      <div class="client-item ${selectedTarget === c.id ? 'selected' : ''}"
+           onclick="selectClient(${c.id})">
+        <span class="client-name">💻 ${c.name}</span>
+        <span class="client-id">#${c.id}</span>
+      </div>
+    `).join('');
+  }
+
+  updateTargetLabel();
+  log(`${clients.length} Display(s) verbunden`);
+}
+
+function selectClient(id) {
+  selectedTarget = selectedTarget === id ? 'all' : id;
+  document.getElementById('select-all-btn').classList.toggle('selected', selectedTarget === 'all');
+  updateClientList(clients);
+}
+
+function selectAll() {
+  selectedTarget = 'all';
+  document.getElementById('select-all-btn').classList.add('selected');
+  updateClientList(clients);
+}
+
+function updateTargetLabel() {
+  const label = document.getElementById('target-label');
+  if (selectedTarget === 'all') {
+    label.className = 'target-label target-all';
+    label.textContent = `→ Alle ${clients.length} Displays`;
+  } else {
+    const client = clients.find(c => c.id === selectedTarget);
+    label.className = 'target-label target-single';
+    label.textContent = `→ ${client ? client.name : 'Display #' + selectedTarget}`;
+  }
+}
+
+// --- Actions ---
+function sendText() {
+  const text = document.getElementById('text-input').value.trim();
+  if (!text) return;
+
+  send({
+    type: 'send-text',
+    text,
+    style: document.getElementById('text-style').value,
+    fontSize: document.getElementById('text-size').value,
+    color: document.getElementById('text-color').value,
+    position: document.getElementById('text-position').value,
+    target: selectedTarget
+  });
+  log(`Text gesendet: "${text.substring(0, 40)}..."`);
+}
+
+function cascadeText() {
+  const text = document.getElementById('text-input').value.trim();
+  if (!text) return;
+
+  send({
+    type: 'cascade-text',
+    text,
+    style: document.getElementById('text-style').value,
+    fontSize: document.getElementById('text-size').value,
+    color: document.getElementById('text-color').value,
+    position: document.getElementById('text-position').value,
+    delay: 500
+  });
+  log(`Kaskade gesendet: "${text.substring(0, 40)}..."`);
+}
+
+function cascadeWords() {
+  const text = document.getElementById('text-input').value.trim();
+  if (!text) return;
+
+  send({
+    type: 'cascade-words',
+    text,
+    fontSize: document.getElementById('text-size').value,
+    color: document.getElementById('text-color').value,
+    delay: 300
+  });
+  log(`Wörter verteilt: "${text.substring(0, 40)}..."`);
+}
+
+function sendImage() {
+  const url = document.getElementById('image-url').value.trim();
+  if (!url) return;
+
+  send({
+    type: 'send-image',
+    url,
+    fit: document.getElementById('image-fit').value,
+    style: document.getElementById('image-style').value,
+    target: selectedTarget
+  });
+  log(`Bild gesendet: ${url.substring(0, 50)}...`);
+}
+
+function sendColor() {
+  send({
+    type: 'send-color',
+    color: document.getElementById('bg-color').value,
+    target: selectedTarget
+  });
+  log(`Hintergrund: ${document.getElementById('bg-color').value}`);
+}
+
+function sendEffect(effect) {
+  send({
+    type: 'effect',
+    effect,
+    target: selectedTarget,
+    duration: 2000
+  });
+  log(`Effekt: ${effect}`);
+}
+
+function clearDisplays() {
+  send({
+    type: 'clear',
+    target: selectedTarget,
+    style: 'fade'
+  });
+  log('Displays geleert');
+}
+
+// --- Log ---
+function log(msg) {
+  const el = document.getElementById('log');
+  const time = new Date().toLocaleTimeString('de-DE');
+  el.innerHTML += `<div class="entry"><span class="time">${time}</span>${msg}</div>`;
+  el.scrollTop = el.scrollHeight;
+}
+
+// --- Keyboard shortcuts ---
+document.addEventListener('keydown', (e) => {
+  if (e.ctrlKey && e.key === 'Enter') {
+    sendText();
+  }
+  if (e.key === 'Escape') {
+    clearDisplays();
+  }
+});
+
+// --- Start ---
+connect();
+</script>
+</body>
+</html>
