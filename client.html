@@ -133,6 +133,13 @@
     border-radius: 0;
   }
 
+  /* Tiled image - shows a portion of a larger image */
+  .display-tile {
+    position: absolute;
+    inset: 0;
+    background-repeat: no-repeat;
+  }
+
   /* --- Animations --- */
 
   /* Fade */
@@ -333,6 +340,10 @@ function handleMessage(msg) {
       showImage(msg);
       break;
 
+    case 'show-tiled-image':
+      showTiledImage(msg);
+      break;
+
     case 'show-color':
       document.body.style.background = msg.color;
       break;
@@ -391,6 +402,33 @@ function showImage(msg) {
     layer.appendChild(errEl);
   };
   layer.appendChild(img);
+  document.getElementById('canvas').appendChild(layer);
+}
+
+function showTiledImage(msg) {
+  hideIdle();
+  const { tile, url, style } = msg;
+  const { col, row, cols, rows } = tile;
+
+  const layer = document.createElement('div');
+  layer.className = 'content-layer';
+
+  const tileEl = document.createElement('div');
+  tileEl.className = 'display-tile anim-fade-in';
+
+  // Calculate background-size: scale image so each tile fills the viewport
+  // e.g., 2 cols means image width = 200%, 3 rows means image height = 300%
+  tileEl.style.backgroundSize = `${cols * 100}% ${rows * 100}%`;
+
+  // Calculate background-position to show the correct tile
+  // For col 0 of 2: 0%, for col 1 of 2: 100%
+  const xPos = cols > 1 ? (col / (cols - 1)) * 100 : 0;
+  const yPos = rows > 1 ? (row / (rows - 1)) * 100 : 0;
+  tileEl.style.backgroundPosition = `${xPos}% ${yPos}%`;
+
+  tileEl.style.backgroundImage = `url('${url}')`;
+
+  layer.appendChild(tileEl);
   document.getElementById('canvas').appendChild(layer);
 }
 

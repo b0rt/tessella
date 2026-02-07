@@ -4,12 +4,18 @@ const path = require("path");
 const { WebSocketServer } = require("ws");
 
 const PORT = 3000;
-const MASTER_PORT = 3001;
+const UPLOADS_DIR = path.join(__dirname, "uploads");
+
+// --- Ensure uploads directory exists ---
+if (!fs.existsSync(UPLOADS_DIR)) {
+  fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+}
 
 // --- State ---
 let clients = new Map(); // ws -> { id, name }
 let clientIdCounter = 0;
 let contentHistory = []; // All content sent so far
+let uploadCounter = 0;
 
 // --- Serve static files ---
 function serveFile(res, filePath, contentType) {
@@ -33,21 +39,74 @@ const mimeTypes = {
   ".woff2": "font/woff2",
   ".ttf": "font/ttf",
   ".otf": "font/otf",
-  ".eot": "application/vnd.ms-fontobject"
+  ".eot": "application/vnd.ms-fontobject",
+  ".png": "image/png",
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".gif": "image/gif",
+  ".webp": "image/webp",
+  ".svg": "image/svg+xml"
 };
 
 // --- Client HTTP Server (port 3000) ---
 const clientServer = http.createServer((req, res) => {
+  // Handle image upload
+  if (req.method === "POST" && req.url === "/upload") {
+    let body = "";
+    req.on("data", chunk => {
+      body += chunk.toString();
+      // Limit upload size to 50MB
+      if (body.length > 50 * 1024 * 1024) {
+        res.writeHead(413);
+        res.end(JSON.stringify({ error: "File too large" }));
+        req.destroy();
+      }
+    });
+    req.on("end", () => {
+      try {
+        const data = JSON.parse(body);
+        const base64Data = data.image.replace(/^data:image\/\w+;base64,/, "");
+        const ext = data.image.match(/^data:image\/(\w+);/)?.[1] || "png";
+
+        uploadCounter++;
+        const filename = `image-${Date.now()}-${uploadCounter}.${ext}`;
+        const filepath = path.join(UPLOADS_DIR, filename);
+
+        fs.writeFile(filepath, base64Data, "base64", (err) => {
+          if (err) {
+            res.writeHead(500);
+            res.end(JSON.stringify({ error: "Failed to save image" }));
+            return;
+          }
+
+          const imageUrl = `/uploads/${filename}`;
+          console.log(`📸 Image uploaded: ${filename}`);
+          res.writeHead(200, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ url: imageUrl }));
+        });
+      } catch (e) {
+        res.writeHead(400);
+        res.end(JSON.stringify({ error: "Invalid request" }));
+      }
+    });
+    return;
+  }
+
+  // Serve static files
   if (req.url === "/" || req.url === "/client") {
     serveFile(res, path.join(__dirname, "client.html"), "text/html");
   } else if (req.url === "/master") {
     serveFile(res, path.join(__dirname, "master.html"), "text/html");
   } else if (req.url.startsWith("/fonts/")) {
-    // Serve font files
     const fontPath = path.join(__dirname, req.url);
     const ext = path.extname(req.url).toLowerCase();
     const contentType = mimeTypes[ext] || "application/octet-stream";
     serveFile(res, fontPath, contentType);
+  } else if (req.url.startsWith("/uploads/")) {
+    const filePath = path.join(__dirname, req.url);
+    const ext = path.extname(req.url).toLowerCase();
+    const contentType = mimeTypes[ext] || "application/octet-stream";
+    serveFile(res, filePath, contentType);
   } else {
     res.writeHead(404);
     res.end("Not found");
@@ -175,6 +234,45 @@ function handleMasterMessage(msg) {
       };
       contentHistory.push(content);
       broadcastToClients(content);
+      break;
+    }
+
+    case "send-tiled-image": {
+      // Distribute image tiles across clients
+      const cols = msg.cols || 2;
+      const rows = msg.rows || 1;
+      const totalTiles = cols * rows;
+      const clientList = Array.from(clients.entries());
+
+      clientList.forEach(([ws, info], index) => {
+        if (index >= totalTiles) {
+          // More clients than tiles - clear extra clients
+          ws.send(JSON.stringify({ type: "clear", target: info.id, style: "fade" }));
+          return;
+        }
+
+        // Calculate tile position (left-to-right, top-to-bottom)
+        const col = index % cols;
+        const row = Math.floor(index / cols);
+
+        const content = {
+          type: "show-tiled-image",
+          url: msg.url,
+          style: msg.style || "fade",
+          target: info.id,
+          id: Date.now() + index,
+          tile: {
+            col: col,
+            row: row,
+            cols: cols,
+            rows: rows
+          }
+        };
+        contentHistory.push(content);
+        ws.send(JSON.stringify(content));
+      });
+
+      console.log(`🖼️  Tiled image sent: ${cols}x${rows} grid to ${Math.min(clientList.length, totalTiles)} clients`);
       break;
     }
 

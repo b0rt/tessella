@@ -363,6 +363,110 @@
     cursor: pointer;
     padding: 2px;
   }
+
+  /* --- Image upload dropzone --- */
+  .dropzone {
+    position: relative;
+    border: 2px dashed var(--border);
+    border-radius: 8px;
+    padding: 20px;
+    text-align: center;
+    cursor: pointer;
+    transition: all 0.2s;
+    background: var(--bg);
+  }
+  .dropzone:hover, .dropzone.dragover {
+    border-color: var(--accent);
+    background: var(--accent-dim);
+  }
+  .dropzone input[type="file"] {
+    position: absolute;
+    inset: 0;
+    opacity: 0;
+    cursor: pointer;
+  }
+  .dropzone-content {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    pointer-events: none;
+  }
+  .dropzone-icon {
+    font-size: 28px;
+  }
+  .dropzone-text {
+    font-size: 11px;
+    color: var(--text-dim);
+  }
+  .dropzone.has-image .dropzone-content {
+    display: none;
+  }
+  .image-preview-container {
+    position: relative;
+    display: inline-block;
+  }
+  .image-preview {
+    max-width: 100%;
+    max-height: 150px;
+    border-radius: 4px;
+  }
+  .preview-remove {
+    position: absolute;
+    top: -8px;
+    right: -8px;
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    border: none;
+    background: var(--danger);
+    color: white;
+    font-size: 14px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .preview-remove:hover {
+    transform: scale(1.1);
+  }
+
+  /* --- Tiling section --- */
+  .tiling-section {
+    margin-top: 20px;
+    padding-top: 20px;
+    border-top: 1px solid var(--border);
+  }
+  .tile-info {
+    font-size: 11px;
+    color: var(--text-dim);
+    margin-top: 8px;
+    padding: 8px;
+    background: var(--bg);
+    border-radius: 4px;
+    min-height: 20px;
+  }
+  .tile-info.warning {
+    color: var(--danger);
+  }
+
+  /* Upload loading state */
+  .dropzone.uploading {
+    pointer-events: none;
+    opacity: 0.7;
+  }
+  .dropzone.uploading::after {
+    content: 'Hochladen...';
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(0,0,0,0.5);
+    color: var(--accent);
+    font-size: 12px;
+    letter-spacing: 0.1em;
+  }
 </style>
 </head>
 <body>
@@ -449,7 +553,20 @@
         <span>Bild senden</span>
       </div>
       <div class="section-body">
-        <label>Bild-URL</label>
+        <label>Bild hochladen</label>
+        <div id="image-dropzone" class="dropzone">
+          <input type="file" id="image-file" accept="image/*" onchange="handleImageUpload(event)">
+          <div class="dropzone-content">
+            <span class="dropzone-icon">📁</span>
+            <span class="dropzone-text">Bild hierher ziehen oder klicken</span>
+          </div>
+          <div id="image-preview-container" class="image-preview-container" style="display: none;">
+            <img id="image-preview" class="image-preview">
+            <button class="preview-remove" onclick="clearImageUpload(event)">✕</button>
+          </div>
+        </div>
+
+        <label>Oder Bild-URL</label>
         <input type="url" id="image-url" placeholder="https://example.com/bild.jpg">
 
         <div class="row">
@@ -471,6 +588,24 @@
 
         <div class="btn-group">
           <button class="btn" onclick="sendImage()">Senden</button>
+        </div>
+
+        <div class="tiling-section">
+          <label>Kachel-Raster (Bild auf Displays verteilen)</label>
+          <div class="row">
+            <div>
+              <label>Spalten</label>
+              <input type="number" id="tile-cols" value="5" min="1" max="30">
+            </div>
+            <div>
+              <label>Zeilen</label>
+              <input type="number" id="tile-rows" value="2" min="1" max="30">
+            </div>
+          </div>
+          <div class="tile-info" id="tile-info"></div>
+          <div class="btn-group">
+            <button class="btn" onclick="sendTiledImage()">🔲 Gekachelt senden</button>
+          </div>
         </div>
       </div>
     </div>
@@ -546,6 +681,7 @@
 let ws;
 let clients = [];
 let selectedTarget = 'all'; // 'all' or client id
+let uploadedImageData = null; // base64 image data
 
 function connect() {
   const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -602,6 +738,7 @@ function updateClientList(newClients) {
   }
 
   updateTargetLabel();
+  updateTileInfo();
   log(`${clients.length} Display(s) verbunden`);
 }
 
@@ -676,18 +813,149 @@ function cascadeWords() {
   log(`Wörter verteilt: "${text.substring(0, 40)}..."`);
 }
 
+function handleImageUpload(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+
+  if (!file.type.startsWith('image/')) {
+    log('⚠ Nur Bilddateien erlaubt');
+    return;
+  }
+
+  const dropzone = document.getElementById('image-dropzone');
+  const preview = document.getElementById('image-preview');
+  const previewContainer = document.getElementById('image-preview-container');
+
+  // Show loading state
+  dropzone.classList.add('uploading');
+  log(`Lade hoch: ${file.name}...`);
+
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    const base64Data = e.target.result;
+
+    // Show preview immediately
+    preview.src = base64Data;
+    previewContainer.style.display = 'inline-block';
+    dropzone.classList.add('has-image');
+
+    // Upload to server
+    fetch('/upload', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ image: base64Data })
+    })
+    .then(res => res.json())
+    .then(data => {
+      if (data.url) {
+        uploadedImageData = data.url;
+        document.getElementById('image-url').value = '';
+        dropzone.classList.remove('uploading');
+        log(`✓ Bild hochgeladen: ${file.name}`);
+      } else {
+        throw new Error(data.error || 'Upload failed');
+      }
+    })
+    .catch(err => {
+      log(`⚠ Upload fehlgeschlagen: ${err.message}`);
+      dropzone.classList.remove('uploading');
+      clearImageUpload();
+    });
+  };
+  reader.readAsDataURL(file);
+}
+
+function clearImageUpload(event) {
+  if (event) event.stopPropagation();
+
+  uploadedImageData = null;
+  const preview = document.getElementById('image-preview');
+  const previewContainer = document.getElementById('image-preview-container');
+  const dropzone = document.getElementById('image-dropzone');
+  const fileInput = document.getElementById('image-file');
+
+  preview.src = '';
+  previewContainer.style.display = 'none';
+  dropzone.classList.remove('has-image');
+  fileInput.value = '';
+}
+
 function sendImage() {
   const url = document.getElementById('image-url').value.trim();
-  if (!url) return;
+  const imageToSend = uploadedImageData || url;
+
+  if (!imageToSend) {
+    log('⚠ Kein Bild ausgewählt');
+    return;
+  }
 
   send({
     type: 'send-image',
-    url,
+    url: imageToSend,
     fit: document.getElementById('image-fit').value,
     style: document.getElementById('image-style').value,
     target: selectedTarget
   });
-  log(`Bild gesendet: ${url.substring(0, 50)}...`);
+
+  if (uploadedImageData) {
+    log('Hochgeladenes Bild gesendet');
+  } else {
+    log(`Bild gesendet: ${url.substring(0, 50)}...`);
+  }
+}
+
+function sendTiledImage() {
+  const url = document.getElementById('image-url').value.trim();
+  const imageToSend = uploadedImageData || url;
+
+  if (!imageToSend) {
+    log('⚠ Kein Bild ausgewählt');
+    return;
+  }
+
+  const cols = parseInt(document.getElementById('tile-cols').value) || 2;
+  const rows = parseInt(document.getElementById('tile-rows').value) || 1;
+  const totalTiles = cols * rows;
+
+  if (clients.length === 0) {
+    log('⚠ Keine Displays verbunden');
+    return;
+  }
+
+  if (clients.length < totalTiles) {
+    log(`⚠ Nur ${clients.length} Display(s), aber ${totalTiles} Kacheln konfiguriert`);
+  }
+
+  send({
+    type: 'send-tiled-image',
+    url: imageToSend,
+    cols: cols,
+    rows: rows,
+    style: document.getElementById('image-style').value
+  });
+
+  log(`Gekacheltes Bild gesendet: ${cols}x${rows} Raster`);
+}
+
+function updateTileInfo() {
+  const cols = parseInt(document.getElementById('tile-cols').value) || 1;
+  const rows = parseInt(document.getElementById('tile-rows').value) || 1;
+  const totalTiles = cols * rows;
+  const info = document.getElementById('tile-info');
+
+  if (clients.length === 0) {
+    info.textContent = `${cols}×${rows} = ${totalTiles} Kacheln (keine Displays verbunden)`;
+    info.className = 'tile-info warning';
+  } else if (clients.length < totalTiles) {
+    info.textContent = `${cols}×${rows} = ${totalTiles} Kacheln, aber nur ${clients.length} Display(s) verbunden`;
+    info.className = 'tile-info warning';
+  } else if (clients.length > totalTiles) {
+    info.textContent = `${cols}×${rows} = ${totalTiles} Kacheln für ${clients.length} Displays (${clients.length - totalTiles} ohne Bild)`;
+    info.className = 'tile-info';
+  } else {
+    info.textContent = `${cols}×${rows} = ${totalTiles} Kacheln für ${clients.length} Displays ✓`;
+    info.className = 'tile-info';
+  }
 }
 
 function sendColor() {
@@ -736,8 +1004,43 @@ document.addEventListener('keydown', (e) => {
   }
 });
 
+// --- Drag and drop for image upload ---
+function initDropzone() {
+  const dropzone = document.getElementById('image-dropzone');
+
+  dropzone.addEventListener('dragover', (e) => {
+    e.preventDefault();
+    dropzone.classList.add('dragover');
+  });
+
+  dropzone.addEventListener('dragleave', () => {
+    dropzone.classList.remove('dragover');
+  });
+
+  dropzone.addEventListener('drop', (e) => {
+    e.preventDefault();
+    dropzone.classList.remove('dragover');
+
+    const files = e.dataTransfer.files;
+    if (files.length > 0) {
+      const fileInput = document.getElementById('image-file');
+      fileInput.files = files;
+      handleImageUpload({ target: fileInput });
+    }
+  });
+}
+
+// --- Tile input listeners ---
+function initTileInputs() {
+  document.getElementById('tile-cols').addEventListener('input', updateTileInfo);
+  document.getElementById('tile-rows').addEventListener('input', updateTileInfo);
+  updateTileInfo();
+}
+
 // --- Start ---
 connect();
+initDropzone();
+initTileInputs();
 </script>
 </body>
 </html>
