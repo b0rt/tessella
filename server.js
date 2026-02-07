@@ -24,12 +24,30 @@ function serveFile(res, filePath, contentType) {
   });
 }
 
+// --- MIME types for static files ---
+const mimeTypes = {
+  ".html": "text/html",
+  ".css": "text/css",
+  ".js": "application/javascript",
+  ".woff": "font/woff",
+  ".woff2": "font/woff2",
+  ".ttf": "font/ttf",
+  ".otf": "font/otf",
+  ".eot": "application/vnd.ms-fontobject"
+};
+
 // --- Client HTTP Server (port 3000) ---
 const clientServer = http.createServer((req, res) => {
   if (req.url === "/" || req.url === "/client") {
     serveFile(res, path.join(__dirname, "client.html"), "text/html");
   } else if (req.url === "/master") {
     serveFile(res, path.join(__dirname, "master.html"), "text/html");
+  } else if (req.url.startsWith("/fonts/")) {
+    // Serve font files
+    const fontPath = path.join(__dirname, req.url);
+    const ext = path.extname(req.url).toLowerCase();
+    const contentType = mimeTypes[ext] || "application/octet-stream";
+    serveFile(res, fontPath, contentType);
   } else {
     res.writeHead(404);
     res.end("Not found");
