@@ -29,6 +29,8 @@ const detector = ref<any>(null)
 const trackingInterval = ref<number | null>(null)
 const faceDetected = ref(false)
 const lastFacePos = ref({ x: 0, y: 0 })
+const isInitializing = ref(false)
+const tfLock = ref(false)
 
 // Display configurations
 const displayConfigs = ref<Record<number, { x: number; y: number; z: number; rotation: number }>>({})
@@ -95,8 +97,10 @@ function hideEyeball() {
 }
 
 async function startTracking() {
-  if (tracking.value) return
+  if (tracking.value || isInitializing.value || tfLock.value) return
 
+  isInitializing.value = true
+  tfLock.value = true
   emit('log', 'Initialisiere Face Detection...')
 
   try {
@@ -114,13 +118,31 @@ async function startTracking() {
 
     // Explicitly set WebGL backend and wait for it to be ready
     emit('log', 'Initialisiere WebGL Backend...')
+    
     try {
-      await tf.setBackend('webgl')
-    } catch {
-      emit('log', 'WebGL nicht verfügbar, nutze CPU...')
-      await tf.setBackend('cpu')
+      // Set environment flags for better performance and stability before backend init
+      tf.env().set('WEBGL_DELETE_TEXTURE_THRESHOLD', 0)
+      tf.env().set('WEBGL_CPU_FORWARD', false)
+      
+      // Force initialization of the backend
+      await tf.ready()
+      
+      // Try to set backend to webgl if not already set
+      if (tf.getBackend() !== 'webgl') {
+        try {
+          await tf.setBackend('webgl')
+        } catch (e) {
+          console.warn('WebGL backend failed, falling back to CPU', e)
+          await tf.setBackend('cpu')
+        }
+      }
+      
+      await tf.ready()
+    } catch (backendError) {
+      emit('log', `⚠ Backend-Fehler: ${(backendError as Error).message}`)
+      throw backendError
     }
-    await tf.ready()
+    
     emit('log', `TensorFlow.js Backend: ${tf.getBackend()}`)
 
     // Get webcam
@@ -131,6 +153,10 @@ async function startTracking() {
 
     if (videoRef.value) {
       videoRef.value.srcObject = stream
+      await new Promise((resolve) => {
+        if (!videoRef.value) return resolve(null)
+        videoRef.value.onloadedmetadata = () => resolve(null)
+      })
       await videoRef.value.play()
     }
 
@@ -139,6 +165,10 @@ async function startTracking() {
 
     // Load BlazeFace model from local path
     emit('log', 'Lade BlazeFace Model...')
+    
+    // Ensure TF is ready before loading model
+    await tf.ready()
+    
     detector.value = await blazeface.load({
       modelUrl: '/lib/blazeface-model/model.json'
     })
@@ -152,21 +182,68 @@ async function startTracking() {
     emit('log', `⚠ Fehler: ${(err as Error).message}`)
     console.error('Face tracking error:', err)
     stopTracking()
+  } finally {
+    isInitializing.value = false
+    tfLock.value = false
   }
 }
 
 async function detectFaces() {
-  if (!tracking.value || !detector.value || !videoRef.value) return
-
-  // Ensure video is ready
-  if (videoRef.value.readyState < 2) {
-    requestAnimationFrame(detectFaces)
+  if (!tracking.value || !detector.value || !videoRef.value || tfLock.value) {
+    if (tracking.value) {
+      setTimeout(() => requestAnimationFrame(detectFaces), 50)
+    }
     return
   }
 
+  tfLock.value = true
+  
   try {
+    // Ensure video is ready
+    if (videoRef.value.readyState < 2) {
+      tfLock.value = false
+      requestAnimationFrame(detectFaces)
+      return
+    }
+
+    // @ts-ignore
+    const tf = window.tf
+    if (!tf || !detector.value) {
+      tfLock.value = false
+      return
+    }
+    
     // BlazeFace returns predictions array
-    const predictions = await detector.value.estimateFaces(videoRef.value, false)
+    let predictions = []
+    try {
+      // Manual scope management for async inference
+      if (tf.engine) tf.engine().startScope()
+      
+      // EXTRA GUARD: Check again before calling estimateFaces
+      if (tracking.value && detector.value) {
+        // Use a local reference to the video element to avoid potential nulling during await
+        const videoElement = videoRef.value
+        if (videoElement) {
+          predictions = await detector.value.estimateFaces(videoElement, false)
+        }
+      }
+      
+      if (tf.engine) tf.engine().endScope()
+    } catch (e) {
+      // Ensure scope is closed even on error
+      if (tf.engine && tf.engine().state.scopeStack.length > 0) {
+        try { tf.engine().endScope() } catch (scopeErr) {}
+      }
+      
+      console.error('BlazeFace estimation error:', e)
+      // If backend is lost, try to recover
+      const errorMessage = e instanceof Error ? e.message : String(e)
+      if (errorMessage.includes('backend') || errorMessage.includes('defined')) {
+        emit('log', '⚠ Backend verloren, versuche Recovery...')
+        stopTracking()
+        return
+      }
+    }
 
     if (predictions.length > 0) {
       faceDetected.value = true
@@ -223,27 +300,97 @@ async function detectFaces() {
     }
   } catch (err) {
     console.error('Detection error:', err)
+  } finally {
+    tfLock.value = false
   }
 
   // Continue loop with throttling
   if (tracking.value) {
-    setTimeout(() => requestAnimationFrame(detectFaces), 50) // ~20 FPS
+    // Check one more time before scheduling next frame
+    setTimeout(() => {
+      if (tracking.value) {
+        requestAnimationFrame(detectFaces)
+      }
+    }, 50) // ~20 FPS
   }
 }
 
-function stopTracking() {
+async function stopTracking() {
+  if (!tracking.value && !isInitializing.value) return
+  
   tracking.value = false
   faceDetected.value = false
 
-  if (videoRef.value?.srcObject) {
-    const stream = videoRef.value.srcObject as MediaStream
-    stream.getTracks().forEach(track => track.stop())
-    videoRef.value.srcObject = null
+  // Wait for lock to be free (max 1s)
+  let waitStart = Date.now()
+  while (tfLock.value && Date.now() - waitStart < 1000) {
+    await new Promise(resolve => setTimeout(resolve, 50))
   }
+  
+  tfLock.value = true
+  
+  try {
+    // First null the detector so no more inference can start
+    const currentDetector = detector.value
+    detector.value = null
 
-  if (trackingInterval.value) {
-    clearInterval(trackingInterval.value)
-    trackingInterval.value = null
+    // Ensure any pending engine scopes are cleared immediately
+    // @ts-ignore
+    const tf = window.tf
+    if (tf && tf.engine) {
+      try {
+        while (tf.engine().state.scopeStack.length > 0) {
+          tf.engine().endScope()
+        }
+      } catch (e) {}
+    }
+
+    if (videoRef.value?.srcObject) {
+      const stream = videoRef.value.srcObject as MediaStream
+      stream.getTracks().forEach(track => track.stop())
+      videoRef.value.srcObject = null
+    }
+
+    if (trackingInterval.value) {
+      clearInterval(trackingInterval.value)
+      trackingInterval.value = null
+    }
+
+    // Clear canvas
+    if (canvasRef.value) {
+      const ctx = canvasRef.value.getContext('2d')
+      if (ctx) ctx.clearRect(0, 0, 160, 120)
+    }
+
+    // Dispose of detector if possible to free up WebGL memory
+    if (currentDetector && typeof currentDetector.dispose === 'function') {
+      try {
+        currentDetector.dispose()
+      } catch (e) {
+        console.warn('detector dispose failed', e)
+      }
+    }
+    
+    // Clean up global TF state safely
+    if (tf) {
+      try {
+        // Clear out any remaining engine scopes (already done above but safe to repeat)
+        if (typeof tf.engine === 'function') {
+          try {
+            while (tf.engine().state.scopeStack.length > 0) {
+              tf.engine().endScope()
+            }
+          } catch (e) {}
+        }
+        
+        // Do NOT call disposeVariables() as it destroys model weights and can crash the engine
+        // if called while operations are pending or if we try to reload later.
+      } catch (e) {
+        console.warn('tf cleanup failed', e)
+      }
+    }
+  } finally {
+    tfLock.value = false
   }
 
   emit('log', 'Face Tracking gestoppt')
