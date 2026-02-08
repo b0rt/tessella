@@ -513,14 +513,14 @@ function broadcastToPilots(msg) {
 clientServer.listen(PORT, "0.0.0.0", () => {
   console.log(`
 ╔══════════════════════════════════════════════════╗
-║        🖥️  LAPTOP INSTALLATION SERVER 🖥️         ║
+║             🖥️  TESSELLA SERVER 🖥️               ║
 ╠══════════════════════════════════════════════════╣
 ║                                                  ║
 ║  Client URL:  http://<YOUR-IP>:${PORT}/          ║
 ║  Pilot URL:   http://<YOUR-IP>:${PORT}/pilot     ║
 ║                                                  ║
 ║  Open /pilot on your control computer            ║
-║  Open / on all 10 laptops                        ║
+║  Open / on all display screens                   ║
 ║                                                  ║
 ╚══════════════════════════════════════════════════╝
   `);
