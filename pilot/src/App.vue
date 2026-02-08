@@ -49,7 +49,7 @@ onUnmounted(() => {
     <!-- Header -->
     <header class="border-b border-border px-6 py-4 flex items-center justify-between">
       <h1 class="text-sm font-medium uppercase tracking-widest text-primary">
-        🎛️ Installation Control
+        🎛️ Tessella
       </h1>
       <div class="flex items-center gap-2 text-sm text-muted-foreground">
         <span

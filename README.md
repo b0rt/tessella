@@ -1,6 +1,6 @@
-# 🖥️ Laptop Installation – Multi-Display WebSocket System
+# Tessella – Multi-Display WebSocket System
 
-Interaktive Installation: Bis zu 30 Laptops zeigen synchron Texte, Bilder und Effekte,
+Interaktive Installation: Bis zu 30 Displays zeigen synchron Texte, Bilder und Effekte,
 gesteuert von einem Pilot-Computer im selben LAN.
 
 ## Architektur

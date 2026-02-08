@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-WV Data Displays is a WebSocket-based multi-display installation system for controlling multiple laptop screens from a single pilot control panel. Designed for LAN-based operation without internet dependency.
+Tessella is a WebSocket-based multi-display installation system for controlling multiple screens from a single pilot control panel. Designed for LAN-based operation without internet dependency.
 
 ## Commands
 

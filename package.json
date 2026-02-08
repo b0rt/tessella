@@ -1,7 +1,7 @@
 {
-  "name": "laptop-installation",
+  "name": "tessella",
   "version": "1.0.0",
-  "description": "Interactive multi-laptop installation with WebSocket control",
+  "description": "Multi-display WebSocket installation system",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
