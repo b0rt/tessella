@@ -45,44 +45,67 @@ const mimeTypes = {
   ".jpeg": "image/jpeg",
   ".gif": "image/gif",
   ".webp": "image/webp",
-  ".svg": "image/svg+xml"
+  ".svg": "image/svg+xml",
+  ".mp4": "video/mp4",
+  ".webm": "video/webm",
+  ".ogg": "video/ogg",
+  ".mov": "video/quicktime"
 };
 
 // --- Client HTTP Server (port 3000) ---
 const clientServer = http.createServer((req, res) => {
-  // Handle image upload
+  // Handle media upload (images and videos)
   if (req.method === "POST" && req.url === "/upload") {
     let body = "";
     req.on("data", chunk => {
       body += chunk.toString();
-      // Limit upload size to 50MB
-      if (body.length > 50 * 1024 * 1024) {
+      // Limit upload size to 500MB for videos
+      if (body.length > 500 * 1024 * 1024) {
         res.writeHead(413);
-        res.end(JSON.stringify({ error: "File too large" }));
+        res.end(JSON.stringify({ error: "File too large (max 500MB)" }));
         req.destroy();
       }
     });
     req.on("end", () => {
       try {
         const data = JSON.parse(body);
-        const base64Data = data.image.replace(/^data:image\/\w+;base64,/, "");
-        const ext = data.image.match(/^data:image\/(\w+);/)?.[1] || "png";
+        const mediaData = data.image || data.video;
+
+        if (!mediaData) {
+          res.writeHead(400);
+          res.end(JSON.stringify({ error: "No media data provided" }));
+          return;
+        }
+
+        // Detect media type from data URL
+        const isVideo = mediaData.startsWith("data:video/");
+        const base64Data = mediaData.replace(/^data:(image|video)\/[\w+]+;base64,/, "");
+
+        let ext;
+        if (isVideo) {
+          ext = mediaData.match(/^data:video\/([\w+]+);/)?.[1] || "mp4";
+          // Normalize some extensions
+          if (ext === "quicktime") ext = "mov";
+        } else {
+          ext = mediaData.match(/^data:image\/(\w+);/)?.[1] || "png";
+        }
 
         uploadCounter++;
-        const filename = `image-${Date.now()}-${uploadCounter}.${ext}`;
+        const prefix = isVideo ? "video" : "image";
+        const filename = `${prefix}-${Date.now()}-${uploadCounter}.${ext}`;
         const filepath = path.join(UPLOADS_DIR, filename);
 
         fs.writeFile(filepath, base64Data, "base64", (err) => {
           if (err) {
             res.writeHead(500);
-            res.end(JSON.stringify({ error: "Failed to save image" }));
+            res.end(JSON.stringify({ error: "Failed to save file" }));
             return;
           }
 
-          const imageUrl = `/uploads/${filename}`;
-          console.log(`📸 Image uploaded: ${filename}`);
+          const url = `/uploads/${filename}`;
+          console.log(`${isVideo ? "🎬" : "📸"} ${isVideo ? "Video" : "Image"} uploaded: ${filename}`);
           res.writeHead(200, { "Content-Type": "application/json" });
-          res.end(JSON.stringify({ url: imageUrl }));
+          res.end(JSON.stringify({ url, type: isVideo ? "video" : "image" }));
         });
       } catch (e) {
         res.writeHead(400);
@@ -376,6 +399,37 @@ function handlePilotMessage(msg) {
         effect: msg.effect, // "pulse", "glitch", "wave", "flash"
         target: msg.target || "all",
         duration: msg.duration || 2000
+      };
+      broadcastToClients(content);
+      break;
+    }
+
+    case "send-video": {
+      const content = {
+        type: "show-video",
+        url: msg.url,
+        style: msg.style || "fade",
+        target: msg.target || "all",
+        id: Date.now(),
+        fit: msg.fit || "contain",
+        loop: msg.loop !== false,
+        muted: msg.muted !== false,
+        autoplay: msg.autoplay !== false,
+        position: msg.position || "center"
+      };
+      contentHistory.push(content);
+      broadcastToClients(content);
+      console.log(`🎬 Video sent to ${msg.target || "all"}: ${msg.url}`);
+      break;
+    }
+
+    case "video-control": {
+      const content = {
+        type: "video-control",
+        action: msg.action, // "play", "pause", "stop", "mute", "unmute", "seek", "sync"
+        target: msg.target || "all",
+        time: msg.time,
+        playing: msg.playing
       };
       broadcastToClients(content);
       break;

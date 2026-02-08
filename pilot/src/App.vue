@@ -4,6 +4,7 @@ import { useWebSocket } from '@/composables/useWebSocket'
 import ClientList from '@/components/ClientList.vue'
 import TextPanel from '@/components/panels/TextPanel.vue'
 import ImagePanel from '@/components/panels/ImagePanel.vue'
+import VideoPanel from '@/components/panels/VideoPanel.vue'
 import BackgroundPanel from '@/components/panels/BackgroundPanel.vue'
 import EffectsPanel from '@/components/panels/EffectsPanel.vue'
 import ControlPanel from '@/components/panels/ControlPanel.vue'
@@ -79,6 +80,12 @@ onUnmounted(() => {
         <ImagePanel
           :selectedTarget="selectedTarget"
           :clients="clients"
+          @send="handleSend"
+          @log="handleLog"
+        />
+
+        <VideoPanel
+          :selectedTarget="selectedTarget"
           @send="handleSend"
           @log="handleLog"
         />

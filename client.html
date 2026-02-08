@@ -140,6 +140,21 @@
     background-repeat: no-repeat;
   }
 
+  /* --- Video styles --- */
+  .display-video {
+    max-width: 100%;
+    max-height: 100vh;
+    object-fit: contain;
+  }
+
+  .display-video.fit-cover {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    max-width: 100%;
+    max-height: 100%;
+  }
+
   /* --- Animations --- */
 
   /* Fade */
@@ -344,6 +359,14 @@ function handleMessage(msg) {
       showTiledImage(msg);
       break;
 
+    case 'show-video':
+      showVideo(msg);
+      break;
+
+    case 'video-control':
+      controlVideo(msg);
+      break;
+
     case 'show-color':
       document.body.style.background = msg.color;
       break;
@@ -482,7 +505,105 @@ function createTileElement(url, bgWidth, bgHeight, xPos, yPos) {
   document.getElementById('canvas').appendChild(layer);
 }
 
+let currentVideo = null;
+
+function showVideo(msg) {
+  hideIdle();
+  // Remove any existing video first
+  if (currentVideo) {
+    currentVideo.pause();
+    currentVideo.parentElement?.remove();
+    currentVideo = null;
+  }
+
+  const layer = createLayer(msg.position);
+  const video = document.createElement('video');
+  video.className = 'display-video anim-fade-in';
+  video.id = 'active-video';
+
+  if (msg.fit === 'cover') video.classList.add('fit-cover');
+
+  video.src = msg.url;
+  video.loop = msg.loop !== false;
+  video.muted = msg.muted !== false; // Muted by default for autoplay
+  video.playsInline = true;
+  video.preload = 'auto';
+
+  video.onerror = () => {
+    const errEl = document.createElement('div');
+    errEl.className = 'display-text anim-fade-in';
+    errEl.style.fontSize = '1rem';
+    errEl.style.color = 'rgba(255,100,100,0.5)';
+    errEl.textContent = '⚠ Video nicht ladbar';
+    layer.appendChild(errEl);
+  };
+
+  video.oncanplay = () => {
+    if (msg.autoplay !== false) {
+      video.play().catch(e => {
+        console.log('Autoplay blocked:', e);
+        // Try muted autoplay as fallback
+        video.muted = true;
+        video.play().catch(() => {});
+      });
+    }
+  };
+
+  layer.appendChild(video);
+  document.getElementById('canvas').appendChild(layer);
+  currentVideo = video;
+}
+
+function controlVideo(msg) {
+  const video = currentVideo || document.getElementById('active-video');
+  if (!video) return;
+
+  switch (msg.action) {
+    case 'play':
+      video.play().catch(() => {});
+      break;
+    case 'pause':
+      video.pause();
+      break;
+    case 'stop':
+      video.pause();
+      video.currentTime = 0;
+      break;
+    case 'mute':
+      video.muted = true;
+      break;
+    case 'unmute':
+      video.muted = false;
+      break;
+    case 'seek':
+      if (typeof msg.time === 'number') {
+        video.currentTime = msg.time;
+      }
+      break;
+    case 'sync':
+      // Sync to a target time (for coordinated playback)
+      if (typeof msg.time === 'number') {
+        const diff = Math.abs(video.currentTime - msg.time);
+        if (diff > 0.5) { // Only sync if drift is significant
+          video.currentTime = msg.time;
+        }
+      }
+      if (msg.playing && video.paused) {
+        video.play().catch(() => {});
+      } else if (!msg.playing && !video.paused) {
+        video.pause();
+      }
+      break;
+  }
+}
+
 function clearContent(style) {
+  // Stop and clear any playing video
+  if (currentVideo) {
+    currentVideo.pause();
+    currentVideo = null;
+  }
+
   const layers = document.querySelectorAll('.content-layer');
   layers.forEach(layer => {
     layer.classList.add('anim-fade-out');
