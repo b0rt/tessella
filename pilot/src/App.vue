@@ -8,8 +8,8 @@ import VideoPanel from '@/components/panels/VideoPanel.vue'
 import EyeballPanel from '@/components/panels/EyeballPanel.vue'
 import BackgroundPanel from '@/components/panels/BackgroundPanel.vue'
 import EffectsPanel from '@/components/panels/EffectsPanel.vue'
-import ControlPanel from '@/components/panels/ControlPanel.vue'
 import ActivityLog from '@/components/panels/ActivityLog.vue'
+import { Button } from '@/components/ui/button'
 
 const { connected, clients, logs, send, log, clearLogs } = useWebSocket()
 
@@ -21,6 +21,15 @@ function handleSend(msg: Record<string, unknown>) {
 
 function handleLog(message: string) {
   log(message)
+}
+
+function clearDisplays() {
+  send({
+    type: 'clear',
+    target: selectedTarget.value,
+    style: 'fade',
+  })
+  log('Displays geleert')
 }
 
 // Keyboard shortcuts
@@ -51,12 +60,17 @@ onUnmounted(() => {
       <h1 class="text-sm font-medium uppercase tracking-widest text-primary">
         🎛️ Tessella
       </h1>
-      <div class="flex items-center gap-2 text-sm text-muted-foreground">
-        <span
-          class="w-2 h-2 rounded-full"
-          :class="connected ? 'bg-green-500' : 'bg-red-500'"
-        />
-        <span>{{ connected ? 'Verbunden' : 'Getrennt – verbinde...' }}</span>
+      <div class="flex items-center gap-4">
+        <Button variant="destructive" size="sm" @click="clearDisplays">
+          🗑 Alles löschen
+        </Button>
+        <div class="flex items-center gap-2 text-sm text-muted-foreground">
+          <span
+            class="w-2 h-2 rounded-full"
+            :class="connected ? 'bg-green-500' : 'bg-red-500'"
+          />
+          <span>{{ connected ? 'Verbunden' : 'Getrennt – verbinde...' }}</span>
+        </div>
       </div>
     </header>
 
@@ -105,12 +119,6 @@ onUnmounted(() => {
         />
 
         <EffectsPanel
-          :selectedTarget="selectedTarget"
-          @send="handleSend"
-          @log="handleLog"
-        />
-
-        <ControlPanel
           :selectedTarget="selectedTarget"
           @send="handleSend"
           @log="handleLog"

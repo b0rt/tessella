@@ -5,3 +5,4 @@
 /dist/
 /pilot/node_modules/
 .idea/
+.claude/
