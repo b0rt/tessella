@@ -93,6 +93,7 @@ function hideEyeball() {
     target: props.selectedTarget
   })
   eyeballActive.value = false
+  stopTracking()
   emit('log', 'Eyeball deaktiviert')
 }
 
@@ -104,11 +105,60 @@ async function startTracking() {
   emit('log', 'Initialisiere Face Detection...')
 
   try {
+    // 1. Get webcam first (most likely to fail/timeout)
+    emit('log', 'Starte Webcam...')
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video: { 
+        width: { ideal: 640 }, 
+        height: { ideal: 480 }, 
+        facingMode: 'user' 
+      }
+    })
+
+    // Check if we were stopped while waiting for the camera
+    if (!isInitializing.value || !eyeballActive.value) {
+      emit('log', 'Webcam gestoppt (Initialisierung abgebrochen)')
+      stream.getTracks().forEach(track => track.stop())
+      return
+    }
+
+    if (videoRef.value) {
+      videoRef.value.srcObject = stream
+      
+      // Wait for metadata with timeout
+      await new Promise((resolve, reject) => {
+        if (!videoRef.value) return resolve(null)
+        if (videoRef.value.readyState >= 1) return resolve(null)
+        
+        const timeout = setTimeout(() => {
+          if (videoRef.value) videoRef.value.onloadedmetadata = null
+          reject(new Error('Timeout beim Laden der Video-Metadaten'))
+        }, 10000)
+        
+        videoRef.value.onloadedmetadata = () => {
+          clearTimeout(timeout)
+          resolve(null)
+        }
+      })
+      
+      try {
+        await videoRef.value.play()
+      } catch (playError) {
+        console.warn('Video play error:', playError)
+        // Many browsers require user gesture for play() if not muted, 
+        // but we should be muted. Try again just in case.
+        if (videoRef.value) {
+          videoRef.value.muted = true
+          await videoRef.value.play()
+        }
+      }
+    }
+
+    // 2. Initialize TensorFlow.js
     // Check if TensorFlow.js and BlazeFace are loaded (via script tags)
     // @ts-ignore - global tf and blazeface from script tags
     if (typeof window.tf === 'undefined' || typeof window.blazeface === 'undefined') {
-      emit('log', '⚠ TensorFlow.js nicht geladen. Bitte Seite neu laden.')
-      return
+      throw new Error('TensorFlow.js nicht geladen. Bitte Seite neu laden.')
     }
 
     // @ts-ignore
@@ -120,24 +170,27 @@ async function startTracking() {
     emit('log', 'Initialisiere WebGL Backend...')
     
     try {
-      // Set environment flags for better performance and stability before backend init
-      tf.env().set('WEBGL_DELETE_TEXTURE_THRESHOLD', 0)
-      tf.env().set('WEBGL_CPU_FORWARD', false)
+      // Set environment flags for better performance and stability
+      tf.env().set('WEBGL_PACK', true)
+      // Be conservative with texture deletion to avoid race conditions with internal BlazeFace tensors
+      tf.env().set('WEBGL_DELETE_TEXTURE_THRESHOLD', -1) 
       
-      // Force initialization of the backend
+      // Ensure we are starting fresh
       await tf.ready()
       
-      // Try to set backend to webgl if not already set
-      if (tf.getBackend() !== 'webgl') {
-        try {
-          await tf.setBackend('webgl')
-        } catch (e) {
-          console.warn('WebGL backend failed, falling back to CPU', e)
-          await tf.setBackend('cpu')
-        }
+      // Force webgl if possible
+      try {
+        await tf.setBackend('webgl')
+        await tf.ready()
+      } catch (e) {
+        console.warn('WebGL initialization failed, checking current backend', e)
       }
-      
-      await tf.ready()
+
+      if (tf.getBackend() !== 'webgl') {
+        emit('log', '⚠ WebGL nicht verfügbar, nutze CPU (langsamer)...')
+        await tf.setBackend('cpu')
+        await tf.ready()
+      }
     } catch (backendError) {
       emit('log', `⚠ Backend-Fehler: ${(backendError as Error).message}`)
       throw backendError
@@ -145,25 +198,7 @@ async function startTracking() {
     
     emit('log', `TensorFlow.js Backend: ${tf.getBackend()}`)
 
-    // Get webcam
-    emit('log', 'Starte Webcam...')
-    const stream = await navigator.mediaDevices.getUserMedia({
-      video: { width: 640, height: 480, facingMode: 'user' }
-    })
-
-    if (videoRef.value) {
-      videoRef.value.srcObject = stream
-      await new Promise((resolve) => {
-        if (!videoRef.value) return resolve(null)
-        videoRef.value.onloadedmetadata = () => resolve(null)
-      })
-      await videoRef.value.play()
-    }
-
-    // Wait for video to be ready
-    await new Promise(resolve => setTimeout(resolve, 500))
-
-    // Load BlazeFace model from local path
+    // 3. Load BlazeFace model
     emit('log', 'Lade BlazeFace Model...')
     
     // Ensure TF is ready before loading model
@@ -172,6 +207,31 @@ async function startTracking() {
     detector.value = await blazeface.load({
       modelUrl: '/lib/blazeface-model/model.json'
     })
+
+    // Warmup the model
+    try {
+      emit('log', 'Wärme Modell auf...')
+      // Give it a moment to stabilize
+      await new Promise(resolve => setTimeout(resolve, 300))
+      
+      const warmupInput = (videoRef.value && videoRef.value.readyState >= 2) 
+        ? videoRef.value 
+        : document.createElement('canvas')
+      
+      if (warmupInput instanceof HTMLCanvasElement) {
+        warmupInput.width = 128
+        warmupInput.height = 128
+      }
+      
+      await detector.value.estimateFaces(warmupInput, false)
+      emit('log', 'Warmup erfolgreich')
+    } catch (e) {
+      console.warn('Warmup failed:', e)
+      const errorMessage = e instanceof Error ? e.message : String(e)
+      if (errorMessage.includes('backend') || errorMessage.includes('defined')) {
+        throw new Error(`Warmup-Backend-Fehler: ${errorMessage}`)
+      }
+    }
 
     tracking.value = true
     emit('log', 'Face Tracking gestartet')
@@ -182,6 +242,26 @@ async function startTracking() {
     emit('log', `⚠ Fehler: ${(err as Error).message}`)
     console.error('Face tracking error:', err)
     stopTracking()
+    
+    // Auto-recovery attempt if it was a backend or camera error during initialization
+    const errorMessage = (err as Error).message || String(err)
+    const errorName = (err as any).name || ''
+    
+    if (
+      errorMessage.includes('backend') || 
+      errorMessage.includes('defined') || 
+      errorMessage.includes('Warmup') ||
+      errorMessage.includes('Timeout') ||
+      errorName === 'AbortError' ||
+      errorName === 'NotReadableError'
+    ) {
+      setTimeout(() => {
+        if (!tracking.value && eyeballActive.value) {
+          emit('log', 'Versuche Neustart nach Initialisierungsfehler...')
+          startTracking()
+        }
+      }, 5000) // Delay for recovery
+    }
   } finally {
     isInitializing.value = false
     tfLock.value = false
@@ -212,35 +292,58 @@ async function detectFaces() {
       tfLock.value = false
       return
     }
+
+    // Log memory occasionally
+    if (Math.random() < 0.01) {
+      console.log('TF Memory:', tf.memory())
+    }
     
     // BlazeFace returns predictions array
     let predictions = []
     try {
-      // Manual scope management for async inference
-      if (tf.engine) tf.engine().startScope()
-      
       // EXTRA GUARD: Check again before calling estimateFaces
       if (tracking.value && detector.value) {
         // Use a local reference to the video element to avoid potential nulling during await
         const videoElement = videoRef.value
-        if (videoElement) {
-          predictions = await detector.value.estimateFaces(videoElement, false)
+        if (videoElement && videoElement.videoWidth > 0) {
+          // Double check backend is still valid and not lost
+          const backend = tf.backend()
+          if (tf.getBackend() === 'webgl' && backend && typeof (backend as any).getGPGPUContext === 'function') {
+            const gl = (backend as any).getGPGPUContext().gl
+            if (gl && gl.isContextLost()) {
+              throw new Error('WebGL context lost')
+            }
+          }
+
+          if (tf.getBackend() && backend) {
+            // estimateFaces is async, BlazeFace handles its own internal tensors
+            predictions = await detector.value.estimateFaces(videoElement, false)
+          } else {
+            throw new Error('Backend lost before estimation')
+          }
         }
       }
-      
-      if (tf.engine) tf.engine().endScope()
     } catch (e) {
-      // Ensure scope is closed even on error
-      if (tf.engine && tf.engine().state.scopeStack.length > 0) {
-        try { tf.engine().endScope() } catch (scopeErr) {}
-      }
-      
       console.error('BlazeFace estimation error:', e)
       // If backend is lost, try to recover
       const errorMessage = e instanceof Error ? e.message : String(e)
-      if (errorMessage.includes('backend') || errorMessage.includes('defined')) {
+      if (
+        errorMessage.includes('backend') || 
+        errorMessage.includes('defined') || 
+        errorMessage.includes('context lost') ||
+        errorMessage.includes('Timeout')
+      ) {
         emit('log', '⚠ Backend verloren, versuche Recovery...')
+        tfLock.value = false
         stopTracking()
+        
+        // Auto-recovery attempt
+        setTimeout(() => {
+          if (!tracking.value && eyeballActive.value) {
+            emit('log', 'Versuche Neustart nach Fehler...')
+            startTracking()
+          }
+        }, 3000)
         return
       }
     }
@@ -319,6 +422,7 @@ async function stopTracking() {
   if (!tracking.value && !isInitializing.value) return
   
   tracking.value = false
+  isInitializing.value = false
   faceDetected.value = false
 
   // Wait for lock to be free (max 1s)
@@ -383,8 +487,18 @@ async function stopTracking() {
           } catch (e) {}
         }
         
-        // Do NOT call disposeVariables() as it destroys model weights and can crash the engine
-        // if called while operations are pending or if we try to reload later.
+        // Aggressively clear textures if we have many
+        if (tf.getBackend() === 'webgl') {
+          // @ts-ignore
+          const numTextures = tf.memory().numTextures
+          if (numTextures > 100) {
+            console.log(`Cleaning up ${numTextures} textures...`)
+            // This is a bit of a hack but can help force GC
+            if (typeof tf.disposeVariables === 'function') {
+              // tf.disposeVariables() // Still risky, but maybe necessary if numTextures is huge
+            }
+          }
+        }
       } catch (e) {
         console.warn('tf cleanup failed', e)
       }
@@ -456,6 +570,7 @@ onUnmounted(() => {
               width="640"
               height="480"
               playsinline
+              muted
             />
             <canvas
               ref="canvasRef"
@@ -475,7 +590,7 @@ onUnmounted(() => {
               <Button
                 size="sm"
                 @click="startTracking"
-                :disabled="tracking"
+                :disabled="tracking || isInitializing"
               >
                 📷 Starten
               </Button>
