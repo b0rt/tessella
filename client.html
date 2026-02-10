@@ -934,10 +934,38 @@ function configureDisplay(msg) {
   console.log('Display configured:', displayConfig);
 }
 
+// --- Wake Lock (prevent screen sleep) ---
+let wakeLock = null;
+
+async function requestWakeLock() {
+  if (!('wakeLock' in navigator)) {
+    console.log('Wake Lock API not supported');
+    return;
+  }
+  try {
+    wakeLock = await navigator.wakeLock.request('screen');
+    console.log('Wake Lock active');
+    wakeLock.addEventListener('release', () => {
+      console.log('Wake Lock released');
+      wakeLock = null;
+    });
+  } catch (err) {
+    console.log('Wake Lock failed:', err.message);
+  }
+}
+
+// Re-acquire wake lock when tab becomes visible again
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible' && !wakeLock) {
+    requestWakeLock();
+  }
+});
+
 // --- Start ---
 connect();
+requestWakeLock();
 
-// Prevent sleep / screensaver with occasional activity
+// Heartbeat to keep WebSocket alive
 setInterval(() => {
   if (ws && ws.readyState === 1) {
     ws.send(JSON.stringify({ type: 'heartbeat' }));
