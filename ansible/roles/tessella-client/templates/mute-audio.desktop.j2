@@ -1,0 +1,10 @@
+[Desktop Entry]
+# Tessella Kiosk – Audio stummschalten
+# Generiert von Ansible – nicht manuell bearbeiten!
+Type=Application
+Name=Tessella Audio stummschalten
+Comment=Schaltet den Standard-Audio-Ausgang stumm
+Exec=bash -c "sleep 2; pactl set-sink-mute @DEFAULT_SINK@ 1"
+Hidden=false
+NoDisplay=false
+X-GNOME-Autostart-enabled=true

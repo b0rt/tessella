@@ -1,0 +1,50 @@
+#!/usr/bin/env bash
+# =============================================================================
+# Tessella Kiosk-Skript
+# Startet Firefox im Kiosk-Modus und verbindet sich zum Tessella-Server.
+# Generiert von Ansible – nicht manuell bearbeiten!
+# =============================================================================
+
+set -euo pipefail
+
+TESSELLA_URL="{{ tessella_client_kiosk_url }}"
+TESSELLA_SERVER="{{ tessella_server_url }}"
+MAX_WAIT=120
+
+# --- Firefox-Binary erkennen -------------------------------------------------
+if command -v firefox-esr &>/dev/null; then
+    FIREFOX_BIN="firefox-esr"
+elif command -v firefox &>/dev/null; then
+    FIREFOX_BIN="firefox"
+else
+    echo "[FEHLER] Weder firefox-esr noch firefox gefunden!" >&2
+    exit 1
+fi
+
+echo "[INFO] Verwende Browser: ${FIREFOX_BIN}"
+
+# --- Auf Tessella-Server warten ----------------------------------------------
+echo "[INFO] Warte auf Tessella-Server (${TESSELLA_SERVER}) ..."
+SECONDS_WAITED=0
+until curl -s --max-time 2 "${TESSELLA_SERVER}" >/dev/null 2>&1; do
+    if [ "${SECONDS_WAITED}" -ge "${MAX_WAIT}" ]; then
+        echo "[FEHLER] Tessella-Server nach ${MAX_WAIT}s nicht erreichbar!" >&2
+        exit 1
+    fi
+    sleep 2
+    SECONDS_WAITED=$((SECONDS_WAITED + 2))
+done
+echo "[INFO] Tessella-Server erreichbar nach ${SECONDS_WAITED}s."
+
+# --- Endlosschleife: Firefox im Kiosk-Modus ----------------------------------
+while true; do
+    # Session-Recovery aufräumen
+    find "${HOME}/.mozilla/firefox/" -name "sessionstore.jsonlz4" -delete 2>/dev/null || true
+    find "${HOME}/.mozilla/firefox/" -name "sessionstore-backups" -type d -exec rm -rf {} + 2>/dev/null || true
+
+    echo "[INFO] Starte ${FIREFOX_BIN} im Kiosk-Modus ..."
+    ${FIREFOX_BIN} --kiosk "${TESSELLA_URL}" || true
+
+    echo "[WARNUNG] Firefox wurde beendet – Neustart in 3 Sekunden ..."
+    sleep 3
+done

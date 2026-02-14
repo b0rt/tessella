@@ -1,0 +1,19 @@
+---
+# =============================================================================
+# Tessella Kiosk – Haupt-Playbook
+# =============================================================================
+# Provisioniert Client-Displays als Kiosk-Terminals.
+# Der Tessella-Server wird NICHT verwaltet – er läuft bereits.
+#
+# Beispiele:
+#   ansible-playbook site.yml
+#   ansible-playbook site.yml --limit clients_mx
+#   ansible-playbook site.yml --limit display-suse-01
+# =============================================================================
+
+- name: Tessella Kiosk-Clients provisionieren
+  hosts: clients
+  become: true
+  roles:
+    - tessella-common
+    - tessella-client

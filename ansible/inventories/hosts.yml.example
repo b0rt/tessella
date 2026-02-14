@@ -1,0 +1,39 @@
+---
+# =============================================================================
+# Tessella Kiosk – Inventory-Template
+# =============================================================================
+# Kopiere diese Datei nach hosts.yml und passe die IP-Adressen an:
+#   cp hosts.yml.example hosts.yml
+#
+# Hinweis: Es gibt KEINE Server-Gruppe. Der Tessella-Server läuft bereits
+# und wird nicht von Ansible verwaltet.
+# =============================================================================
+
+all:
+  children:
+    clients:
+      children:
+
+        # --- MX Linux 25.1 (Debian 12 Bookworm) -----------------------------
+        clients_mx:
+          vars:
+            tessella_client_user: momo
+            ansible_user: momo
+          hosts:
+            display-mx-01:
+              ansible_host: 192.168.1.101
+            display-mx-02:
+              ansible_host: 192.168.1.102
+            display-mx-03:
+              ansible_host: 192.168.1.103
+
+        # --- openSUSE --------------------------------------------------------
+        clients_suse:
+          vars:
+            tessella_client_user: ich
+            ansible_user: ich
+          hosts:
+            display-suse-01:
+              ansible_host: 192.168.1.111
+            display-suse-02:
+              ansible_host: 192.168.1.112

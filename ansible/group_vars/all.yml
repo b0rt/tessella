@@ -1,0 +1,17 @@
+---
+# =============================================================================
+# Tessella Kiosk – Globale Variablen
+# =============================================================================
+
+# --- Tessella-Server (läuft bereits, wird NICHT von Ansible verwaltet) -------
+tessella_server_ip: "192.168.1.100"
+tessella_server_port: 3000
+tessella_server_url: "http://{{ tessella_server_ip }}:{{ tessella_server_port }}"
+tessella_client_kiosk_url: "{{ tessella_server_url }}/"
+
+# --- Feature-Flags -----------------------------------------------------------
+tessella_client_autologin: true
+tessella_client_hide_cursor: true
+tessella_client_disable_screensaver: true
+tessella_client_disable_power_management: true
+tessella_client_mute_audio: true

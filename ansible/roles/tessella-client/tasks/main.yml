@@ -1,0 +1,249 @@
+---
+# =============================================================================
+# tessella-client – Kiosk-Display-Konfiguration
+# =============================================================================
+
+# ╔═══════════════════════════════════════════════════════════════════════════╗
+# ║ Pakete                                                                    ║
+# ╚═══════════════════════════════════════════════════════════════════════════╝
+
+# --- Kiosk-Pakete installieren (Debian/Ubuntu) -------------------------------
+- name: Kiosk-Pakete installieren (apt)
+  ansible.builtin.apt:
+    name:
+      - firefox-esr
+      - xdotool
+      - x11-xserver-utils
+      - unclutter
+      - pulseaudio-utils
+      - curl
+    state: present
+  when: ansible_os_family == "Debian"
+
+# --- Kiosk-Pakete installieren (openSUSE) ------------------------------------
+- name: Kiosk-Pakete installieren (zypper)
+  community.general.zypper:
+    name:
+      - MozillaFirefox
+      - xdotool
+      - xset
+      - unclutter
+      - pulseaudio-utils
+      - curl
+    state: present
+  when: ansible_os_family == "Suse"
+
+# ╔═══════════════════════════════════════════════════════════════════════════╗
+# ║ Autologin                                                                 ║
+# ╚═══════════════════════════════════════════════════════════════════════════╝
+
+# --- Prüfen ob LightDM installiert ist ---------------------------------------
+- name: Prüfen ob LightDM-Konfigurationsverzeichnis existiert
+  ansible.builtin.stat:
+    path: /etc/lightdm
+  register: lightdm_dir
+
+# --- Prüfen ob SDDM installiert ist ------------------------------------------
+- name: Prüfen ob SDDM-Konfigurationsverzeichnis existiert
+  ansible.builtin.stat:
+    path: /etc/sddm.conf.d
+  register: sddm_conf_d
+
+- name: Prüfen ob sddm.conf existiert
+  ansible.builtin.stat:
+    path: /etc/sddm.conf
+  register: sddm_conf
+
+# --- LightDM-Autologin konfigurieren -----------------------------------------
+- name: LightDM-Konfigurationsverzeichnis erstellen
+  ansible.builtin.file:
+    path: /etc/lightdm/lightdm.conf.d
+    state: directory
+    mode: "0755"
+  when:
+    - tessella_client_autologin
+    - lightdm_dir.stat.exists
+
+- name: LightDM-Autologin konfigurieren
+  ansible.builtin.template:
+    src: lightdm-autologin.conf.j2
+    dest: /etc/lightdm/lightdm.conf.d/50-tessella-autologin.conf
+    mode: "0644"
+  when:
+    - tessella_client_autologin
+    - lightdm_dir.stat.exists
+  notify: restart display-manager
+
+# --- SDDM-Autologin konfigurieren --------------------------------------------
+- name: SDDM-Konfigurationsverzeichnis erstellen
+  ansible.builtin.file:
+    path: /etc/sddm.conf.d
+    state: directory
+    mode: "0755"
+  when:
+    - tessella_client_autologin
+    - sddm_conf_d.stat.exists or sddm_conf.stat.exists
+
+- name: SDDM-Autologin konfigurieren
+  ansible.builtin.template:
+    src: sddm-autologin.conf.j2
+    dest: /etc/sddm.conf.d/tessella-autologin.conf
+    mode: "0644"
+  when:
+    - tessella_client_autologin
+    - sddm_conf_d.stat.exists or sddm_conf.stat.exists
+  notify: restart display-manager
+
+# ╔═══════════════════════════════════════════════════════════════════════════╗
+# ║ Kiosk-Skript                                                              ║
+# ╚═══════════════════════════════════════════════════════════════════════════╝
+
+# --- Kiosk-Skript erstellen ---------------------------------------------------
+- name: Verzeichnis ~/.local/bin sicherstellen
+  ansible.builtin.file:
+    path: "/home/{{ tessella_client_user }}/.local/bin"
+    state: directory
+    owner: "{{ tessella_client_user }}"
+    group: "{{ tessella_client_user }}"
+    mode: "0755"
+
+- name: Kiosk-Skript installieren
+  ansible.builtin.template:
+    src: tessella-kiosk.sh.j2
+    dest: "/home/{{ tessella_client_user }}/.local/bin/tessella-kiosk.sh"
+    owner: "{{ tessella_client_user }}"
+    group: "{{ tessella_client_user }}"
+    mode: "0755"
+
+# --- Autostart-Verzeichnis erstellen ------------------------------------------
+- name: Autostart-Verzeichnis erstellen
+  ansible.builtin.file:
+    path: "/home/{{ tessella_client_user }}/.config/autostart"
+    state: directory
+    owner: "{{ tessella_client_user }}"
+    group: "{{ tessella_client_user }}"
+    mode: "0755"
+
+# --- Kiosk-Autostart-Eintrag -------------------------------------------------
+- name: Kiosk-Autostart-Eintrag erstellen
+  ansible.builtin.template:
+    src: tessella-kiosk.desktop.j2
+    dest: "/home/{{ tessella_client_user }}/.config/autostart/tessella-kiosk.desktop"
+    owner: "{{ tessella_client_user }}"
+    group: "{{ tessella_client_user }}"
+    mode: "0644"
+
+# ╔═══════════════════════════════════════════════════════════════════════════╗
+# ║ Firefox Policies                                                          ║
+# ╚═══════════════════════════════════════════════════════════════════════════╝
+
+# --- Firefox-Policies-Verzeichnis (Debian) ------------------------------------
+- name: Firefox-Policies-Verzeichnis erstellen (Debian)
+  ansible.builtin.file:
+    path: /usr/lib/firefox-esr/distribution
+    state: directory
+    mode: "0755"
+  when: ansible_os_family == "Debian"
+
+# --- Firefox-Policies-Verzeichnis (openSUSE) ---------------------------------
+- name: Firefox-Policies-Verzeichnis erstellen (openSUSE)
+  ansible.builtin.file:
+    path: /usr/lib64/firefox/distribution
+    state: directory
+    mode: "0755"
+  when: ansible_os_family == "Suse"
+
+# --- Firefox-Policies installieren (Debian) -----------------------------------
+- name: Firefox-Policies installieren (Debian)
+  ansible.builtin.template:
+    src: firefox-policies.json.j2
+    dest: /usr/lib/firefox-esr/distribution/policies.json
+    mode: "0644"
+  when: ansible_os_family == "Debian"
+
+# --- Firefox-Policies installieren (openSUSE) --------------------------------
+- name: Firefox-Policies installieren (openSUSE)
+  ansible.builtin.template:
+    src: firefox-policies.json.j2
+    dest: /usr/lib64/firefox/distribution/policies.json
+    mode: "0644"
+  when: ansible_os_family == "Suse"
+
+# ╔═══════════════════════════════════════════════════════════════════════════╗
+# ║ Autostart-Einträge                                                        ║
+# ╚═══════════════════════════════════════════════════════════════════════════╝
+
+# --- Bildschirmschoner deaktivieren -------------------------------------------
+- name: Bildschirmschoner-Deaktivierung als Autostart einrichten
+  ansible.builtin.template:
+    src: disable-screensaver.desktop.j2
+    dest: "/home/{{ tessella_client_user }}/.config/autostart/tessella-disable-screensaver.desktop"
+    owner: "{{ tessella_client_user }}"
+    group: "{{ tessella_client_user }}"
+    mode: "0644"
+  when: tessella_client_disable_screensaver
+
+- name: Bildschirmschoner-Deaktivierung entfernen wenn deaktiviert
+  ansible.builtin.file:
+    path: "/home/{{ tessella_client_user }}/.config/autostart/tessella-disable-screensaver.desktop"
+    state: absent
+  when: not tessella_client_disable_screensaver
+
+# --- Cursor verstecken -------------------------------------------------------
+- name: Cursor-Ausblendung als Autostart einrichten
+  ansible.builtin.template:
+    src: hide-cursor.desktop.j2
+    dest: "/home/{{ tessella_client_user }}/.config/autostart/tessella-hide-cursor.desktop"
+    owner: "{{ tessella_client_user }}"
+    group: "{{ tessella_client_user }}"
+    mode: "0644"
+  when: tessella_client_hide_cursor
+
+- name: Cursor-Ausblendung entfernen wenn deaktiviert
+  ansible.builtin.file:
+    path: "/home/{{ tessella_client_user }}/.config/autostart/tessella-hide-cursor.desktop"
+    state: absent
+  when: not tessella_client_hide_cursor
+
+# --- Audio stummschalten ------------------------------------------------------
+- name: Audio-Stummschaltung als Autostart einrichten
+  ansible.builtin.template:
+    src: mute-audio.desktop.j2
+    dest: "/home/{{ tessella_client_user }}/.config/autostart/tessella-mute-audio.desktop"
+    owner: "{{ tessella_client_user }}"
+    group: "{{ tessella_client_user }}"
+    mode: "0644"
+  when: tessella_client_mute_audio
+
+- name: Audio-Stummschaltung entfernen wenn deaktiviert
+  ansible.builtin.file:
+    path: "/home/{{ tessella_client_user }}/.config/autostart/tessella-mute-audio.desktop"
+    state: absent
+  when: not tessella_client_mute_audio
+
+# ╔═══════════════════════════════════════════════════════════════════════════╗
+# ║ Power Management                                                          ║
+# ╚═══════════════════════════════════════════════════════════════════════════╝
+
+# --- Sleep/Suspend/Hibernate deaktivieren -------------------------------------
+- name: Systemd Sleep-Targets maskieren
+  ansible.builtin.systemd:
+    name: "{{ item }}"
+    masked: true
+  loop:
+    - sleep.target
+    - suspend.target
+    - hibernate.target
+    - hybrid-sleep.target
+  when: tessella_client_disable_power_management
+
+- name: Systemd Sleep-Targets demaskieren wenn deaktiviert
+  ansible.builtin.systemd:
+    name: "{{ item }}"
+    masked: false
+  loop:
+    - sleep.target
+    - suspend.target
+    - hibernate.target
+    - hybrid-sleep.target
+  when: not tessella_client_disable_power_management

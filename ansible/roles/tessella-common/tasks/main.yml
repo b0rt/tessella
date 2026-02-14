@@ -1,0 +1,62 @@
+---
+# =============================================================================
+# tessella-common – Grundkonfiguration für alle Clients
+# =============================================================================
+
+# --- System-Update (Debian/Ubuntu) -------------------------------------------
+- name: Paketlisten aktualisieren (apt)
+  ansible.builtin.apt:
+    update_cache: true
+    cache_valid_time: 3600
+  when: ansible_os_family == "Debian"
+
+- name: System-Pakete aktualisieren (apt)
+  ansible.builtin.apt:
+    upgrade: safe
+  when: ansible_os_family == "Debian"
+
+# --- System-Update (openSUSE) ------------------------------------------------
+- name: System-Pakete aktualisieren (zypper)
+  community.general.zypper:
+    name: '*'
+    state: latest
+    update_cache: true
+  when: ansible_os_family == "Suse"
+
+# --- Grundpakete installieren (Debian/Ubuntu) --------------------------------
+- name: Grundpakete installieren (apt)
+  ansible.builtin.apt:
+    name:
+      - curl
+      - wget
+      - git
+      - htop
+      - vim
+      - openssh-server
+    state: present
+  when: ansible_os_family == "Debian"
+
+# --- Grundpakete installieren (openSUSE) -------------------------------------
+- name: Grundpakete installieren (zypper)
+  community.general.zypper:
+    name:
+      - curl
+      - wget
+      - git
+      - htop
+      - vim
+      - openssh
+    state: present
+  when: ansible_os_family == "Suse"
+
+# --- SSH-Dienst aktivieren und starten ----------------------------------------
+- name: SSH-Dienst aktivieren und starten
+  ansible.builtin.systemd:
+    name: sshd
+    enabled: true
+    state: started
+
+# --- Zeitzone setzen ----------------------------------------------------------
+- name: Zeitzone auf Europe/Berlin setzen
+  community.general.timezone:
+    name: Europe/Berlin

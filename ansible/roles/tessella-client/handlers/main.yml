@@ -1,0 +1,9 @@
+---
+# =============================================================================
+# tessella-client – Handler
+# =============================================================================
+
+- name: restart display-manager
+  ansible.builtin.systemd:
+    name: display-manager.service
+    state: restarted
