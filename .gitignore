@@ -5,3 +5,7 @@
 /dist/
 /pilot/node_modules/
 .idea/
+
+# Ansible – lokale Konfiguration (enthält IP-Adressen und Benutzerdaten)
+ansible/inventories/hosts.yml
+ansible/group_vars/all.yml

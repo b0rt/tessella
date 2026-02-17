@@ -57,11 +57,12 @@ echo "ich ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/tessella
 
 ## Schnellstart
 
-### 1. Inventory vorbereiten
+### 1. Konfigurationsdateien vorbereiten
 
 ```bash
 cd ansible/
 cp inventories/hosts.yml.example inventories/hosts.yml
+cp group_vars/all.example.yml group_vars/all.yml
 ```
 
 Passe in `inventories/hosts.yml` die IP-Adressen an.
@@ -107,7 +108,8 @@ ansible/
 ├── inventories/
 │   └── hosts.yml.example       # Inventory-Template
 ├── group_vars/
-│   └── all.yml                 # Globale Variablen
+│   ├── all.example.yml         # Variablen-Template (→ all.yml kopieren)
+│   └── all.yml                 # Lokale Variablen (gitignored)
 └── roles/
     ├── tessella-common/        # System-Updates, Grundpakete, SSH, Timezone
     │   └── tasks/main.yml

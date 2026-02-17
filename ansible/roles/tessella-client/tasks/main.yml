@@ -170,6 +170,35 @@
   when: ansible_os_family == "Suse"
 
 # ╔═══════════════════════════════════════════════════════════════════════════╗
+# ║ Xfce Session (MX Linux)                                                   ║
+# ╚═══════════════════════════════════════════════════════════════════════════╝
+
+# --- Xfce Session-Speicherung deaktivieren (damit Autostart immer läuft) ----
+- name: Xfce4-xfconf-Verzeichnis sicherstellen
+  ansible.builtin.file:
+    path: "/home/{{ tessella_client_user }}/.config/xfce4/xfconf/xfce-perchannel-xml"
+    state: directory
+    owner: "{{ tessella_client_user }}"
+    group: "{{ tessella_client_user }}"
+    mode: "0755"
+  when: ansible_os_family == "Debian"
+
+- name: Xfce Session-Speicherung deaktivieren
+  ansible.builtin.template:
+    src: xfce4-session.xml.j2
+    dest: "/home/{{ tessella_client_user }}/.config/xfce4/xfconf/xfce-perchannel-xml/xfce4-session.xml"
+    owner: "{{ tessella_client_user }}"
+    group: "{{ tessella_client_user }}"
+    mode: "0644"
+  when: ansible_os_family == "Debian"
+
+- name: Gespeicherte Xfce-Session löschen
+  ansible.builtin.file:
+    path: "/home/{{ tessella_client_user }}/.cache/sessions"
+    state: absent
+  when: ansible_os_family == "Debian"
+
+# ╔═══════════════════════════════════════════════════════════════════════════╗
 # ║ Autostart-Einträge                                                        ║
 # ╚═══════════════════════════════════════════════════════════════════════════╝
 
