@@ -10,6 +10,11 @@ set -euo pipefail
 TESSELLA_URL="{{ tessella_client_kiosk_url }}"
 TESSELLA_SERVER="{{ tessella_server_url }}"
 MAX_WAIT=120
+STARTUP_DELAY=5
+
+# --- Warten bis Desktop-Umgebung bereit ist ---------------------------------
+echo "[INFO] Warte ${STARTUP_DELAY}s auf Desktop-Umgebung ..."
+sleep "${STARTUP_DELAY}"
 
 # --- Firefox-Binary erkennen -------------------------------------------------
 if command -v firefox-esr &>/dev/null; then
@@ -38,7 +43,9 @@ echo "[INFO] Tessella-Server erreichbar nach ${SECONDS_WAITED}s."
 
 # --- Endlosschleife: Firefox im Kiosk-Modus ----------------------------------
 while true; do
-    # Session-Recovery aufräumen
+    # Lock-Dateien und Session-Recovery aufräumen (verhindert Probleme nach unsauberem Neustart)
+    find "${HOME}/.mozilla/firefox/" -name ".parentlock" -delete 2>/dev/null || true
+    find "${HOME}/.mozilla/firefox/" -name "lock" -delete 2>/dev/null || true
     find "${HOME}/.mozilla/firefox/" -name "sessionstore.jsonlz4" -delete 2>/dev/null || true
     find "${HOME}/.mozilla/firefox/" -name "sessionstore-backups" -type d -exec rm -rf {} + 2>/dev/null || true
 
