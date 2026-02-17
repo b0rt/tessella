@@ -154,19 +154,30 @@ ansible all -m ansible.builtin.ping -vvv
 
 ### Firefox startet nicht im Kiosk-Modus
 
-1. Prüfe ob das Kiosk-Skript vorhanden und ausführbar ist:
+1. Prüfe die Kiosk-Log-Datei (wird bei jedem Start neu geschrieben):
+   ```bash
+   cat /home/<user>/.local/share/tessella/kiosk.log
+   ```
+   Wenn die Datei **nicht existiert**, wird das Kiosk-Skript gar nicht gestartet – dann liegt das Problem beim Autostart oder Autologin (siehe unten).
+
+2. Prüfe ob das Kiosk-Skript vorhanden und ausführbar ist:
    ```bash
    ls -la /home/<user>/.local/bin/tessella-kiosk.sh
    ```
 
-2. Prüfe ob der Tessella-Server erreichbar ist:
+3. Prüfe ob der Tessella-Server erreichbar ist:
    ```bash
    curl -s http://192.168.1.100:3000/
    ```
 
-3. Prüfe die Autostart-Datei:
+4. Prüfe die Autostart-Datei:
    ```bash
    cat /home/<user>/.config/autostart/tessella-kiosk.desktop
+   ```
+
+5. Xfce-Session-Restore kann Autostart verhindern – gespeicherte Sessions löschen:
+   ```bash
+   rm -rf /home/<user>/.cache/sessions
    ```
 
 ### Autologin funktioniert nicht
