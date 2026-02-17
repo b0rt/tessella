@@ -1,0 +1,12 @@
+---
+# =============================================================================
+# tessella-client – Standard-Variablen
+# =============================================================================
+
+# --- Feature-Flags -----------------------------------------------------------
+tessella_client_autologin: true
+tessella_client_hide_cursor: true
+tessella_client_disable_screensaver: true
+tessella_client_disable_power_management: true
+tessella_client_mute_audio: true
+tessella_client_reboot_after_provision: false
