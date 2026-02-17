@@ -136,6 +136,7 @@ Alle Features können in `group_vars/all.yml` einzeln aktiviert/deaktiviert werd
 | `tessella_client_disable_screensaver`  | `true`  | Bildschirmschoner deaktivieren  |
 | `tessella_client_disable_power_management` | `true` | Sleep/Suspend deaktivieren    |
 | `tessella_client_mute_audio`           | `true`  | Audio stummschalten             |
+| `tessella_client_reboot_after_provision` | `false` | Neustart nach Provisionierung |
 
 ## Troubleshooting
 
