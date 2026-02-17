@@ -12,9 +12,30 @@ TESSELLA_SERVER="{{ tessella_server_url }}"
 MAX_WAIT=120
 STARTUP_DELAY=5
 
+# --- Logging einrichten ------------------------------------------------------
+LOG_DIR="${HOME}/.local/share/tessella"
+LOG_FILE="${LOG_DIR}/kiosk.log"
+mkdir -p "${LOG_DIR}"
+
+# Alte Log-Datei rotieren (max 1 Backup behalten)
+if [ -f "${LOG_FILE}" ]; then
+    mv -f "${LOG_FILE}" "${LOG_FILE}.1"
+fi
+
+exec > >(tee -a "${LOG_FILE}") 2>&1
+echo "============================================="
+echo "[INFO] Tessella Kiosk gestartet: $(date '+%Y-%m-%d %H:%M:%S')"
+echo "============================================="
+
 # --- Warten bis Desktop-Umgebung bereit ist ---------------------------------
 echo "[INFO] Warte ${STARTUP_DELAY}s auf Desktop-Umgebung ..."
 sleep "${STARTUP_DELAY}"
+
+# --- Gespeicherte Xfce-Session löschen (verhindert Session-Restore statt Autostart) ---
+if [ -d "${HOME}/.cache/sessions" ]; then
+    echo "[INFO] Lösche gespeicherte Xfce-Session ..."
+    rm -rf "${HOME}/.cache/sessions"
+fi
 
 # --- Firefox-Binary erkennen -------------------------------------------------
 if command -v firefox-esr &>/dev/null; then
@@ -27,6 +48,7 @@ else
 fi
 
 echo "[INFO] Verwende Browser: ${FIREFOX_BIN}"
+echo "[INFO] DISPLAY=${DISPLAY:-nicht gesetzt}"
 
 # --- Auf Tessella-Server warten ----------------------------------------------
 echo "[INFO] Warte auf Tessella-Server (${TESSELLA_SERVER}) ..."
@@ -49,9 +71,9 @@ while true; do
     find "${HOME}/.mozilla/firefox/" -name "sessionstore.jsonlz4" -delete 2>/dev/null || true
     find "${HOME}/.mozilla/firefox/" -name "sessionstore-backups" -type d -exec rm -rf {} + 2>/dev/null || true
 
-    echo "[INFO] Starte ${FIREFOX_BIN} im Kiosk-Modus ..."
+    echo "[INFO] Starte ${FIREFOX_BIN} im Kiosk-Modus ... ($(date '+%H:%M:%S'))"
     ${FIREFOX_BIN} --kiosk "${TESSELLA_URL}" || true
 
-    echo "[WARNUNG] Firefox wurde beendet – Neustart in 3 Sekunden ..."
+    echo "[WARNUNG] Firefox wurde beendet – Neustart in 3 Sekunden ... ($(date '+%H:%M:%S'))"
     sleep 3
 done
