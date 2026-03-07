@@ -6,7 +6,6 @@ import { Badge } from '@/components/ui/badge'
 import { Select } from '@/components/ui/select'
 import { useScenes, type Scene } from '@/composables/useScenes'
 import type { Client } from '@/composables/useWebSocket'
-import SceneEditor from './SceneEditor.vue'
 
 const props = defineProps<{
   selectedTarget: number | 'all'
@@ -16,6 +15,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   send: [msg: Record<string, unknown>]
   log: [message: string]
+  captured: []
 }>()
 
 function sendMsg(msg: Record<string, unknown>): boolean {
@@ -41,8 +41,6 @@ const {
   setPlaybackMode,
 } = useScenes(sendMsg)
 
-const editingIndex = ref(-1)
-
 onMounted(() => {
   loadScenes()
 })
@@ -51,6 +49,7 @@ async function handleCapture() {
   const scene = await captureScene()
   if (scene) {
     emit('log', `Szene erfasst: "${scene.name}" (${scene.items.length} Elemente)`)
+    emit('captured')
   }
 }
 
@@ -62,7 +61,6 @@ function handlePlay(index: number) {
 function handleDelete(index: number) {
   const name = scenes.value[index]!.name
   removeScene(index)
-  if (editingIndex.value === index) editingIndex.value = -1
   emit('log', `Szene gelöscht: "${name}"`)
 }
 
@@ -75,8 +73,40 @@ function handleUpdate(index: number, updates: Partial<Scene>) {
   updateScene(index, updates)
 }
 
-function toggleEdit(index: number) {
-  editingIndex.value = editingIndex.value === index ? -1 : index
+// --- Export / Import ---
+function handleExport() {
+  window.location.href = '/api/scenes/export'
+  emit('log', 'Szenen exportiert')
+}
+
+const importInput = ref<HTMLInputElement | null>(null)
+
+function triggerImport() {
+  importInput.value?.click()
+}
+
+async function handleImport(event: Event) {
+  const file = (event.target as HTMLInputElement).files?.[0]
+  if (!file) return
+
+  try {
+    const res = await fetch('/api/scenes/import', {
+      method: 'POST',
+      body: file
+    })
+    const data = await res.json()
+    if (data.ok) {
+      await loadScenes()
+      emit('log', `${data.scenes} Szenen importiert (${data.media} Medien)`)
+    } else {
+      emit('log', `Import fehlgeschlagen: ${data.error}`)
+    }
+  } catch (e) {
+    emit('log', 'Import fehlgeschlagen')
+  }
+
+  // Reset file input
+  if (importInput.value) importInput.value.value = ''
 }
 
 // --- Drag reorder scenes ---
@@ -95,7 +125,6 @@ function onDragOver(event: DragEvent) {
 function onDrop(toIndex: number) {
   if (dragIndex === null || dragIndex === toIndex) return
   reorderScenes(dragIndex, toIndex)
-  if (editingIndex.value === dragIndex) editingIndex.value = toIndex
   dragIndex = null
 }
 </script>
@@ -114,6 +143,19 @@ function onDrop(toIndex: number) {
         <Button size="sm" variant="outline" @click="handleCapture">
           Aktuelle Ansicht erfassen
         </Button>
+        <Button size="sm" variant="outline" @click="handleExport" :disabled="scenes.length === 0">
+          Exportieren
+        </Button>
+        <Button size="sm" variant="outline" @click="triggerImport">
+          Importieren
+        </Button>
+        <input
+          ref="importInput"
+          type="file"
+          accept=".zip"
+          class="hidden"
+          @change="handleImport"
+        />
 
         <div class="flex-1" />
 
@@ -154,24 +196,27 @@ function onDrop(toIndex: number) {
           @drop="onDrop(index)"
         >
           <span class="text-muted-foreground text-xs w-5 cursor-grab">☰</span>
-          <span class="flex-1 text-sm font-medium truncate">{{ scene.name }}</span>
+          <input
+            type="text"
+            :value="scene.name"
+            @change="handleUpdate(index, { name: ($event.target as HTMLInputElement).value })"
+            class="flex-1 text-sm font-medium truncate bg-transparent border-0 border-b border-transparent hover:border-border focus:border-primary focus:outline-none px-0"
+          />
           <Badge variant="outline" class="text-xs">{{ scene.items.length }}</Badge>
-          <span class="text-xs text-muted-foreground">{{ scene.durationMs / 1000 }}s</span>
+          <input
+            type="number"
+            :value="scene.durationMs / 1000"
+            @change="handleUpdate(index, { durationMs: Number(($event.target as HTMLInputElement).value) * 1000 })"
+            min="1"
+            step="1"
+            class="w-16 h-7 text-xs text-center rounded border border-border bg-background px-1"
+            title="Dauer in Sekunden"
+          />
+          <span class="text-xs text-muted-foreground">s</span>
           <Button size="sm" variant="ghost" class="h-7 px-2" @click="handlePlay(index)">▶</Button>
-          <Button size="sm" variant="ghost" class="h-7 px-2" @click="toggleEdit(index)">
-            {{ editingIndex === index ? '✕' : '✎' }}
-          </Button>
           <Button size="sm" variant="ghost" class="h-7 px-2" @click="handleDuplicate(index)">⧉</Button>
           <Button size="sm" variant="ghost" class="h-7 px-2 text-destructive" @click="handleDelete(index)">🗑</Button>
         </div>
-
-        <!-- Inline editor -->
-        <SceneEditor
-          v-if="editingIndex === index"
-          :scene="scene"
-          :clients="clients"
-          @update="handleUpdate(index, $event)"
-        />
       </div>
     </CardContent>
   </Card>

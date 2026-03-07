@@ -17,6 +17,7 @@ const emit = defineEmits<{
   log: [message: string]
 }>()
 
+const collapsed = ref(true)
 const imageUrl = ref('')
 const uploadedImageUrl = ref<string | null>(null)
 const previewSrc = ref<string | null>(null)
@@ -145,10 +146,13 @@ function sendTiledImage() {
 
 <template>
   <Card>
-    <CardHeader>
-      <CardTitle>Bild senden</CardTitle>
+    <CardHeader class="cursor-pointer select-none" @click="collapsed = !collapsed">
+      <CardTitle class="flex items-center justify-between">
+        Bild senden
+        <span class="text-muted-foreground text-sm">{{ collapsed ? '▸' : '▾' }}</span>
+      </CardTitle>
     </CardHeader>
-    <CardContent class="space-y-4">
+    <CardContent v-show="!collapsed" class="space-y-4">
       <!-- Upload dropzone -->
       <div>
         <Label>Bild hochladen</Label>

@@ -2,6 +2,7 @@ const http = require("http");
 const fs = require("fs");
 const path = require("path");
 const { WebSocketServer } = require("ws");
+const AdmZip = require("adm-zip");
 
 const PORT = 3000;
 const UPLOADS_DIR = path.join(__dirname, "uploads");
@@ -170,6 +171,7 @@ const clientServer = http.createServer((req, res) => {
       // Remap type from show-* back to send-* for scene items
       if (item.type === "show-text") item.type = "send-text";
       else if (item.type === "show-image") item.type = "send-image";
+      else if (item.type === "show-tiled-image") item.type = "send-tiled-image";
       else if (item.type === "show-video") item.type = "send-video";
       else if (item.type === "show-color") item.type = "send-color";
       return item;
@@ -195,6 +197,99 @@ const clientServer = http.createServer((req, res) => {
 
     res.writeHead(200, { "Content-Type": "application/json" });
     res.end(JSON.stringify(scene));
+    return;
+  }
+
+  // --- Export scenes as zip bundle ---
+  if (req.method === "GET" && req.url === "/api/scenes/export") {
+    try {
+      const zip = new AdmZip();
+
+      // Read scenes
+      let scenes = [];
+      if (fs.existsSync(SCENES_FILE)) {
+        const raw = fs.readFileSync(SCENES_FILE, "utf-8");
+        scenes = JSON.parse(raw);
+        zip.addFile("scenes.json", Buffer.from(raw, "utf-8"));
+      } else {
+        zip.addFile("scenes.json", Buffer.from("[]", "utf-8"));
+      }
+
+      // Collect referenced upload files from scene items
+      const uploadFiles = new Set();
+      for (const scene of scenes) {
+        for (const item of scene.items || []) {
+          if (item.url && item.url.startsWith("/uploads/")) {
+            uploadFiles.add(item.url);
+          }
+        }
+      }
+
+      // Add each referenced file to zip
+      for (const uploadUrl of uploadFiles) {
+        const filePath = path.join(__dirname, uploadUrl);
+        if (fs.existsSync(filePath)) {
+          zip.addLocalFile(filePath, "uploads");
+        }
+      }
+
+      const zipBuffer = zip.toBuffer();
+      res.writeHead(200, {
+        "Content-Type": "application/zip",
+        "Content-Disposition": 'attachment; filename="tessella-scenes.zip"',
+        "Content-Length": zipBuffer.length
+      });
+      res.end(zipBuffer);
+    } catch (e) {
+      console.error("Export failed:", e);
+      res.writeHead(500);
+      res.end(JSON.stringify({ error: "Export failed" }));
+    }
+    return;
+  }
+
+  // --- Import scenes from zip bundle ---
+  if (req.method === "POST" && req.url === "/api/scenes/import") {
+    const chunks = [];
+    req.on("data", chunk => chunks.push(chunk));
+    req.on("end", () => {
+      try {
+        const buffer = Buffer.concat(chunks);
+        const zip = new AdmZip(buffer);
+
+        // Extract scenes.json
+        const scenesEntry = zip.getEntry("scenes.json");
+        if (!scenesEntry) {
+          res.writeHead(400);
+          res.end(JSON.stringify({ error: "No scenes.json found in zip" }));
+          return;
+        }
+        const importedScenes = JSON.parse(scenesEntry.getData().toString("utf-8"));
+
+        // Extract media files to uploads/
+        const entries = zip.getEntries();
+        let mediaCount = 0;
+        for (const entry of entries) {
+          if (entry.entryName.startsWith("uploads/") && !entry.isDirectory) {
+            const filename = path.basename(entry.entryName);
+            const destPath = path.join(UPLOADS_DIR, filename);
+            fs.writeFileSync(destPath, entry.getData());
+            mediaCount++;
+          }
+        }
+
+        // Write scenes file
+        fs.writeFileSync(SCENES_FILE, JSON.stringify(importedScenes, null, 2));
+
+        console.log(`📦 Imported ${importedScenes.length} scenes, ${mediaCount} media files`);
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ ok: true, scenes: importedScenes.length, media: mediaCount }));
+      } catch (e) {
+        console.error("Import failed:", e);
+        res.writeHead(400);
+        res.end(JSON.stringify({ error: "Invalid zip file" }));
+      }
+    });
     return;
   }
 
@@ -405,6 +500,7 @@ function handlePilotMessage(msg) {
         target: msg.target || "all",
         id: Date.now()
       };
+      contentHistory.push(content);
       broadcastToClients(content);
       break;
     }

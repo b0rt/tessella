@@ -1,6 +1,9 @@
 <script setup lang="ts">
+import { ref } from 'vue'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
+
+const collapsed = ref(true)
 
 const props = defineProps<{
   selectedTarget: number | 'all'
@@ -31,10 +34,13 @@ function sendEffect(effect: string) {
 
 <template>
   <Card>
-    <CardHeader>
-      <CardTitle>Effekte</CardTitle>
+    <CardHeader class="cursor-pointer select-none" @click="collapsed = !collapsed">
+      <CardTitle class="flex items-center justify-between">
+        Effekte
+        <span class="text-muted-foreground text-sm">{{ collapsed ? '▸' : '▾' }}</span>
+      </CardTitle>
     </CardHeader>
-    <CardContent>
+    <CardContent v-show="!collapsed">
       <div class="grid grid-cols-2 md:grid-cols-4 gap-2">
         <Button
           v-for="effect in effects"

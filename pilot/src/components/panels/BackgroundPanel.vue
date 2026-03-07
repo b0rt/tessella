@@ -14,6 +14,7 @@ const emit = defineEmits<{
   log: [message: string]
 }>()
 
+const collapsed = ref(true)
 const bgColor = ref('#0a0a0a')
 
 function sendColor() {
@@ -28,10 +29,13 @@ function sendColor() {
 
 <template>
   <Card>
-    <CardHeader>
-      <CardTitle>Hintergrund</CardTitle>
+    <CardHeader class="cursor-pointer select-none" @click="collapsed = !collapsed">
+      <CardTitle class="flex items-center justify-between">
+        Hintergrund
+        <span class="text-muted-foreground text-sm">{{ collapsed ? '▸' : '▾' }}</span>
+      </CardTitle>
     </CardHeader>
-    <CardContent>
+    <CardContent v-show="!collapsed">
       <div class="flex items-end gap-3">
         <div class="flex-1">
           <Label>Farbe</Label>

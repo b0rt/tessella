@@ -15,6 +15,7 @@ const emit = defineEmits<{
   log: [message: string]
 }>()
 
+const collapsed = ref(true)
 const videoUrl = ref('')
 const uploadedVideoUrl = ref<string | null>(null)
 const previewSrc = ref<string | null>(null)
@@ -134,10 +135,13 @@ function sendControl(action: string) {
 
 <template>
   <Card>
-    <CardHeader>
-      <CardTitle>Video senden</CardTitle>
+    <CardHeader class="cursor-pointer select-none" @click="collapsed = !collapsed">
+      <CardTitle class="flex items-center justify-between">
+        Video senden
+        <span class="text-muted-foreground text-sm">{{ collapsed ? '▸' : '▾' }}</span>
+      </CardTitle>
     </CardHeader>
-    <CardContent class="space-y-4">
+    <CardContent v-show="!collapsed" class="space-y-4">
       <!-- Upload dropzone -->
       <div>
         <Label>Video hochladen</Label>
