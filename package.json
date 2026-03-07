@@ -13,6 +13,7 @@
     "@fontsource/jetbrains-mono": "^5.0.0",
     "@fontsource/playfair-display": "^5.0.0",
     "@fontsource/space-mono": "^5.0.0",
+    "adm-zip": "^0.5.16",
     "three": "^0.160.1",
     "ws": "^8.16.0"
   }

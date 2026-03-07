@@ -388,6 +388,8 @@ function handleMessage(msg) {
       break;
 
     case 'show-color':
+      if (clearBgTimer) { clearTimeout(clearBgTimer); clearBgTimer = null; }
+      explicitBgColor = msg.color;
       document.body.style.background = msg.color;
       break;
 
@@ -542,6 +544,8 @@ function createTileElement(url, bgWidth, bgHeight, xPos, yPos) {
 }
 
 let currentVideo = null;
+let clearBgTimer = null;
+let explicitBgColor = null; // Track explicitly set background color
 
 function showVideo(msg) {
   hideIdle();
@@ -645,9 +649,17 @@ function clearContent(style) {
     layer.classList.add('anim-fade-out');
     setTimeout(() => layer.remove(), 1000);
   });
-  setTimeout(() => {
-    document.body.style.background = '#0a0a0a';
-    showIdle();
+  // Reset explicit background tracking — a new show-color during scene
+  // playback will set it again before the timer fires
+  explicitBgColor = null;
+  if (clearBgTimer) { clearTimeout(clearBgTimer); clearBgTimer = null; }
+  clearBgTimer = setTimeout(() => {
+    // Only reset to black if no explicit color was set since the clear
+    if (!explicitBgColor) {
+      document.body.style.background = '#0a0a0a';
+      showIdle();
+    }
+    clearBgTimer = null;
   }, 1100);
 }
 

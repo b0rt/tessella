@@ -16,9 +16,10 @@ const emit = defineEmits<{
   log: [message: string]
 }>()
 
+const collapsed = ref(true)
 const text = ref('')
 const style = ref('fade')
-const fontSize = ref('2rem')
+const fontSize = ref('10vw')
 const color = ref('#ffffff')
 const position = ref('center')
 
@@ -68,10 +69,13 @@ function cascadeWords() {
 
 <template>
   <Card>
-    <CardHeader>
-      <CardTitle>Text senden</CardTitle>
+    <CardHeader class="cursor-pointer select-none" @click="collapsed = !collapsed">
+      <CardTitle class="flex items-center justify-between">
+        Text senden
+        <span class="text-muted-foreground text-sm">{{ collapsed ? '▸' : '▾' }}</span>
+      </CardTitle>
     </CardHeader>
-    <CardContent class="space-y-4">
+    <CardContent v-show="!collapsed" class="space-y-4">
       <div>
         <Label>Text</Label>
         <Textarea

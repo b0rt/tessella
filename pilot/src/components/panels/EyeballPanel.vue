@@ -17,6 +17,8 @@ const emit = defineEmits<{
   log: [message: string]
 }>()
 
+const collapsed = ref(true)
+
 // Eyeball state
 const eyeballActive = ref(false)
 const irisColor = ref('#4a7c59')
@@ -282,10 +284,13 @@ onUnmounted(() => {
 
 <template>
   <Card>
-    <CardHeader>
-      <CardTitle>Eyeball</CardTitle>
+    <CardHeader class="cursor-pointer select-none" @click="collapsed = !collapsed">
+      <CardTitle class="flex items-center justify-between">
+        Eyeball
+        <span class="text-muted-foreground text-sm">{{ collapsed ? '▸' : '▾' }}</span>
+      </CardTitle>
     </CardHeader>
-    <CardContent class="space-y-4">
+    <CardContent v-show="!collapsed" class="space-y-4">
       <!-- Eyeball controls -->
       <div class="space-y-3">
         <div class="grid grid-cols-2 gap-3">

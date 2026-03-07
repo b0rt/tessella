@@ -2,13 +2,19 @@ const http = require("http");
 const fs = require("fs");
 const path = require("path");
 const { WebSocketServer } = require("ws");
+const AdmZip = require("adm-zip");
 
 const PORT = 3000;
 const UPLOADS_DIR = path.join(__dirname, "uploads");
+const DATA_DIR = path.join(__dirname, "data");
+const SCENES_FILE = path.join(DATA_DIR, "scenes.json");
 
-// --- Ensure uploads directory exists ---
+// --- Ensure directories exist ---
 if (!fs.existsSync(UPLOADS_DIR)) {
   fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+}
+if (!fs.existsSync(DATA_DIR)) {
+  fs.mkdirSync(DATA_DIR, { recursive: true });
 }
 
 // --- State ---
@@ -113,6 +119,182 @@ const clientServer = http.createServer((req, res) => {
       } catch (e) {
         res.writeHead(400);
         res.end(JSON.stringify({ error: "Invalid request" }));
+      }
+    });
+    return;
+  }
+
+  // --- Scenes REST API ---
+  if (req.method === "GET" && req.url === "/api/scenes") {
+    let scenes = [];
+    try {
+      if (fs.existsSync(SCENES_FILE)) {
+        scenes = JSON.parse(fs.readFileSync(SCENES_FILE, "utf-8"));
+      }
+    } catch (e) {
+      console.error("Failed to read scenes:", e);
+    }
+    res.writeHead(200, { "Content-Type": "application/json" });
+    res.end(JSON.stringify(scenes));
+    return;
+  }
+
+  if (req.method === "PUT" && req.url === "/api/scenes") {
+    let body = "";
+    req.on("data", chunk => { body += chunk.toString(); });
+    req.on("end", () => {
+      try {
+        const scenes = JSON.parse(body);
+        fs.writeFileSync(SCENES_FILE, JSON.stringify(scenes, null, 2));
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ ok: true }));
+      } catch (e) {
+        res.writeHead(400);
+        res.end(JSON.stringify({ error: "Invalid JSON" }));
+      }
+    });
+    return;
+  }
+
+  if (req.method === "POST" && req.url === "/api/scenes/capture") {
+    // Snapshot current contentHistory into a new scene, mapping client IDs to slot indices
+    const clientList = Array.from(clients.values());
+    let bgColor = "#0a0a0a";
+    const items = [];
+    for (const entry of contentHistory) {
+      const item = { ...entry };
+      // Map client ID to slot index
+      if (item.target !== "all") {
+        const slotIndex = clientList.findIndex(c => c.id === item.target);
+        item.target = slotIndex >= 0 ? slotIndex : 0;
+      }
+      // Remove server-generated id field
+      delete item.id;
+      // Remap type from show-* back to send-* for scene items
+      if (item.type === "show-color") {
+        // Extract background color into scene-level field instead of item
+        bgColor = item.color;
+        continue;
+      }
+      if (item.type === "show-text") item.type = "send-text";
+      else if (item.type === "show-image") item.type = "send-image";
+      else if (item.type === "show-tiled-image") item.type = "send-tiled-image";
+      else if (item.type === "show-video") item.type = "send-video";
+      items.push(item);
+    }
+
+    const scene = {
+      id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+      name: `Szene ${new Date().toLocaleTimeString("de-DE")}`,
+      items,
+      bgColor,
+      durationMs: 5000,
+      transition: "fade"
+    };
+
+    // Append to existing scenes
+    let scenes = [];
+    try {
+      if (fs.existsSync(SCENES_FILE)) {
+        scenes = JSON.parse(fs.readFileSync(SCENES_FILE, "utf-8"));
+      }
+    } catch (e) {}
+    scenes.push(scene);
+    fs.writeFileSync(SCENES_FILE, JSON.stringify(scenes, null, 2));
+
+    res.writeHead(200, { "Content-Type": "application/json" });
+    res.end(JSON.stringify(scene));
+    return;
+  }
+
+  // --- Export scenes as zip bundle ---
+  if (req.method === "GET" && req.url === "/api/scenes/export") {
+    try {
+      const zip = new AdmZip();
+
+      // Read scenes
+      let scenes = [];
+      if (fs.existsSync(SCENES_FILE)) {
+        const raw = fs.readFileSync(SCENES_FILE, "utf-8");
+        scenes = JSON.parse(raw);
+        zip.addFile("scenes.json", Buffer.from(raw, "utf-8"));
+      } else {
+        zip.addFile("scenes.json", Buffer.from("[]", "utf-8"));
+      }
+
+      // Collect referenced upload files from scene items
+      const uploadFiles = new Set();
+      for (const scene of scenes) {
+        for (const item of scene.items || []) {
+          if (item.url && item.url.startsWith("/uploads/")) {
+            uploadFiles.add(item.url);
+          }
+        }
+      }
+
+      // Add each referenced file to zip
+      for (const uploadUrl of uploadFiles) {
+        const filePath = path.join(__dirname, uploadUrl);
+        if (fs.existsSync(filePath)) {
+          zip.addLocalFile(filePath, "uploads");
+        }
+      }
+
+      const zipBuffer = zip.toBuffer();
+      res.writeHead(200, {
+        "Content-Type": "application/zip",
+        "Content-Disposition": 'attachment; filename="tessella-scenes.zip"',
+        "Content-Length": zipBuffer.length
+      });
+      res.end(zipBuffer);
+    } catch (e) {
+      console.error("Export failed:", e);
+      res.writeHead(500);
+      res.end(JSON.stringify({ error: "Export failed" }));
+    }
+    return;
+  }
+
+  // --- Import scenes from zip bundle ---
+  if (req.method === "POST" && req.url === "/api/scenes/import") {
+    const chunks = [];
+    req.on("data", chunk => chunks.push(chunk));
+    req.on("end", () => {
+      try {
+        const buffer = Buffer.concat(chunks);
+        const zip = new AdmZip(buffer);
+
+        // Extract scenes.json
+        const scenesEntry = zip.getEntry("scenes.json");
+        if (!scenesEntry) {
+          res.writeHead(400);
+          res.end(JSON.stringify({ error: "No scenes.json found in zip" }));
+          return;
+        }
+        const importedScenes = JSON.parse(scenesEntry.getData().toString("utf-8"));
+
+        // Extract media files to uploads/
+        const entries = zip.getEntries();
+        let mediaCount = 0;
+        for (const entry of entries) {
+          if (entry.entryName.startsWith("uploads/") && !entry.isDirectory) {
+            const filename = path.basename(entry.entryName);
+            const destPath = path.join(UPLOADS_DIR, filename);
+            fs.writeFileSync(destPath, entry.getData());
+            mediaCount++;
+          }
+        }
+
+        // Write scenes file
+        fs.writeFileSync(SCENES_FILE, JSON.stringify(importedScenes, null, 2));
+
+        console.log(`📦 Imported ${importedScenes.length} scenes, ${mediaCount} media files`);
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ ok: true, scenes: importedScenes.length, media: mediaCount }));
+      } catch (e) {
+        console.error("Import failed:", e);
+        res.writeHead(400);
+        res.end(JSON.stringify({ error: "Invalid zip file" }));
       }
     });
     return;
@@ -325,6 +507,7 @@ function handlePilotMessage(msg) {
         target: msg.target || "all",
         id: Date.now()
       };
+      contentHistory.push(content);
       broadcastToClients(content);
       break;
     }
@@ -488,6 +671,38 @@ function handlePilotMessage(msg) {
       };
       broadcastToClients(content);
       console.log(`📍 Display ${msg.target} configured: pos(${msg.position?.x}, ${msg.position?.y}, ${msg.position?.z}) rot(${msg.rotation}°)`);
+      break;
+    }
+
+    case "play-scene": {
+      // Play a scene: clear all displays, then replay each scene item
+      const sceneItems = msg.items || [];
+      const transition = msg.transition || "fade";
+      const sceneBgColor = msg.bgColor || "#0a0a0a";
+      const clientList = Array.from(clients.values());
+
+      // Clear all displays first
+      handlePilotMessage({ type: "clear", target: "all", style: transition });
+
+      // Set background color immediately (before content delay) so it
+      // doesn't get overwritten by the clear timer on the client
+      handlePilotMessage({ type: "send-color", color: sceneBgColor, target: "all" });
+
+      // Play each item after a short delay for the clear animation
+      setTimeout(() => {
+        sceneItems.forEach(item => {
+          // Skip send-color items — background is handled above via bgColor
+          if (item.type === "send-color") return;
+          // Resolve slot index to current client ID
+          const resolved = { ...item };
+          if (resolved.target !== "all" && typeof resolved.target === "number") {
+            const client = clientList[resolved.target];
+            resolved.target = client ? client.id : "all";
+          }
+          handlePilotMessage(resolved);
+        });
+        console.log(`🎬 Scene played: ${sceneItems.length} items`);
+      }, 300);
       break;
     }
   }
