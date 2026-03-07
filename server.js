@@ -5,10 +5,15 @@ const { WebSocketServer } = require("ws");
 
 const PORT = 3000;
 const UPLOADS_DIR = path.join(__dirname, "uploads");
+const DATA_DIR = path.join(__dirname, "data");
+const SCENES_FILE = path.join(DATA_DIR, "scenes.json");
 
-// --- Ensure uploads directory exists ---
+// --- Ensure directories exist ---
 if (!fs.existsSync(UPLOADS_DIR)) {
   fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+}
+if (!fs.existsSync(DATA_DIR)) {
+  fs.mkdirSync(DATA_DIR, { recursive: true });
 }
 
 // --- State ---
@@ -115,6 +120,81 @@ const clientServer = http.createServer((req, res) => {
         res.end(JSON.stringify({ error: "Invalid request" }));
       }
     });
+    return;
+  }
+
+  // --- Scenes REST API ---
+  if (req.method === "GET" && req.url === "/api/scenes") {
+    let scenes = [];
+    try {
+      if (fs.existsSync(SCENES_FILE)) {
+        scenes = JSON.parse(fs.readFileSync(SCENES_FILE, "utf-8"));
+      }
+    } catch (e) {
+      console.error("Failed to read scenes:", e);
+    }
+    res.writeHead(200, { "Content-Type": "application/json" });
+    res.end(JSON.stringify(scenes));
+    return;
+  }
+
+  if (req.method === "PUT" && req.url === "/api/scenes") {
+    let body = "";
+    req.on("data", chunk => { body += chunk.toString(); });
+    req.on("end", () => {
+      try {
+        const scenes = JSON.parse(body);
+        fs.writeFileSync(SCENES_FILE, JSON.stringify(scenes, null, 2));
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ ok: true }));
+      } catch (e) {
+        res.writeHead(400);
+        res.end(JSON.stringify({ error: "Invalid JSON" }));
+      }
+    });
+    return;
+  }
+
+  if (req.method === "POST" && req.url === "/api/scenes/capture") {
+    // Snapshot current contentHistory into a new scene, mapping client IDs to slot indices
+    const clientList = Array.from(clients.values());
+    const items = contentHistory.map(entry => {
+      const item = { ...entry };
+      // Map client ID to slot index
+      if (item.target !== "all") {
+        const slotIndex = clientList.findIndex(c => c.id === item.target);
+        item.target = slotIndex >= 0 ? slotIndex : 0;
+      }
+      // Remove server-generated id field
+      delete item.id;
+      // Remap type from show-* back to send-* for scene items
+      if (item.type === "show-text") item.type = "send-text";
+      else if (item.type === "show-image") item.type = "send-image";
+      else if (item.type === "show-video") item.type = "send-video";
+      else if (item.type === "show-color") item.type = "send-color";
+      return item;
+    });
+
+    const scene = {
+      id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+      name: `Szene ${new Date().toLocaleTimeString("de-DE")}`,
+      items,
+      durationMs: 5000,
+      transition: "fade"
+    };
+
+    // Append to existing scenes
+    let scenes = [];
+    try {
+      if (fs.existsSync(SCENES_FILE)) {
+        scenes = JSON.parse(fs.readFileSync(SCENES_FILE, "utf-8"));
+      }
+    } catch (e) {}
+    scenes.push(scene);
+    fs.writeFileSync(SCENES_FILE, JSON.stringify(scenes, null, 2));
+
+    res.writeHead(200, { "Content-Type": "application/json" });
+    res.end(JSON.stringify(scene));
     return;
   }
 
@@ -488,6 +568,31 @@ function handlePilotMessage(msg) {
       };
       broadcastToClients(content);
       console.log(`📍 Display ${msg.target} configured: pos(${msg.position?.x}, ${msg.position?.y}, ${msg.position?.z}) rot(${msg.rotation}°)`);
+      break;
+    }
+
+    case "play-scene": {
+      // Play a scene: clear all displays, then replay each scene item
+      const sceneItems = msg.items || [];
+      const transition = msg.transition || "fade";
+      const clientList = Array.from(clients.values());
+
+      // Clear all displays first
+      handlePilotMessage({ type: "clear", target: "all", style: transition });
+
+      // Play each item after a short delay for the clear animation
+      setTimeout(() => {
+        sceneItems.forEach(item => {
+          // Resolve slot index to current client ID
+          const resolved = { ...item };
+          if (resolved.target !== "all" && typeof resolved.target === "number") {
+            const client = clientList[resolved.target];
+            resolved.target = client ? client.id : "all";
+          }
+          handlePilotMessage(resolved);
+        });
+        console.log(`🎬 Scene played: ${sceneItems.length} items`);
+      }, 300);
       break;
     }
   }
