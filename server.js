@@ -159,7 +159,9 @@ const clientServer = http.createServer((req, res) => {
   if (req.method === "POST" && req.url === "/api/scenes/capture") {
     // Snapshot current contentHistory into a new scene, mapping client IDs to slot indices
     const clientList = Array.from(clients.values());
-    const items = contentHistory.map(entry => {
+    let bgColor = "#0a0a0a";
+    const items = [];
+    for (const entry of contentHistory) {
       const item = { ...entry };
       // Map client ID to slot index
       if (item.target !== "all") {
@@ -169,18 +171,23 @@ const clientServer = http.createServer((req, res) => {
       // Remove server-generated id field
       delete item.id;
       // Remap type from show-* back to send-* for scene items
+      if (item.type === "show-color") {
+        // Extract background color into scene-level field instead of item
+        bgColor = item.color;
+        continue;
+      }
       if (item.type === "show-text") item.type = "send-text";
       else if (item.type === "show-image") item.type = "send-image";
       else if (item.type === "show-tiled-image") item.type = "send-tiled-image";
       else if (item.type === "show-video") item.type = "send-video";
-      else if (item.type === "show-color") item.type = "send-color";
-      return item;
-    });
+      items.push(item);
+    }
 
     const scene = {
       id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
       name: `Szene ${new Date().toLocaleTimeString("de-DE")}`,
       items,
+      bgColor,
       durationMs: 5000,
       transition: "fade"
     };
@@ -671,14 +678,21 @@ function handlePilotMessage(msg) {
       // Play a scene: clear all displays, then replay each scene item
       const sceneItems = msg.items || [];
       const transition = msg.transition || "fade";
+      const sceneBgColor = msg.bgColor || "#0a0a0a";
       const clientList = Array.from(clients.values());
 
       // Clear all displays first
       handlePilotMessage({ type: "clear", target: "all", style: transition });
 
+      // Set background color immediately (before content delay) so it
+      // doesn't get overwritten by the clear timer on the client
+      handlePilotMessage({ type: "send-color", color: sceneBgColor, target: "all" });
+
       // Play each item after a short delay for the clear animation
       setTimeout(() => {
         sceneItems.forEach(item => {
+          // Skip send-color items — background is handled above via bgColor
+          if (item.type === "send-color") return;
           // Resolve slot index to current client ID
           const resolved = { ...item };
           if (resolved.target !== "all" && typeof resolved.target === "number") {

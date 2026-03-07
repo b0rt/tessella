@@ -213,6 +213,13 @@ function onDrop(toIndex: number) {
             title="Dauer in Sekunden"
           />
           <span class="text-xs text-muted-foreground">s</span>
+          <input
+            type="color"
+            :value="scene.bgColor || '#0a0a0a'"
+            @change="handleUpdate(index, { bgColor: ($event.target as HTMLInputElement).value })"
+            class="w-7 h-7 p-0.5 rounded border border-border bg-background cursor-pointer"
+            title="Hintergrundfarbe"
+          />
           <Button size="sm" variant="ghost" class="h-7 px-2" @click="handlePlay(index)">▶</Button>
           <Button size="sm" variant="ghost" class="h-7 px-2" @click="handleDuplicate(index)">⧉</Button>
           <Button size="sm" variant="ghost" class="h-7 px-2 text-destructive" @click="handleDelete(index)">🗑</Button>

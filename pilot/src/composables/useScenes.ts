@@ -12,6 +12,7 @@ export interface Scene {
   items: SceneItem[]
   durationMs: number
   transition: string
+  bgColor: string
 }
 
 type PlaybackMode = 'manual' | 'auto' | 'random'
@@ -112,6 +113,7 @@ export function useScenes(send: (msg: Record<string, unknown>) => boolean) {
       type: 'play-scene',
       items: scene.items,
       transition: scene.transition,
+      bgColor: scene.bgColor || '#0a0a0a',
     })
   }
 
