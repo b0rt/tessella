@@ -2,6 +2,7 @@
 /fonts/
 /lib/
 /uploads/
+/data/
 /dist/
 /pilot/node_modules/
 .idea/

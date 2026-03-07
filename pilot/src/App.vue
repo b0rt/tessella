@@ -9,6 +9,7 @@ import EyeballPanel from '@/components/panels/EyeballPanel.vue'
 import BackgroundPanel from '@/components/panels/BackgroundPanel.vue'
 import EffectsPanel from '@/components/panels/EffectsPanel.vue'
 import ControlPanel from '@/components/panels/ControlPanel.vue'
+import ScenesPanel from '@/components/panels/ScenesPanel.vue'
 import ActivityLog from '@/components/panels/ActivityLog.vue'
 
 const { connected, clients, logs, send, log, clearLogs } = useWebSocket()
@@ -112,6 +113,13 @@ onUnmounted(() => {
 
         <ControlPanel
           :selectedTarget="selectedTarget"
+          @send="handleSend"
+          @log="handleLog"
+        />
+
+        <ScenesPanel
+          :selectedTarget="selectedTarget"
+          :clients="clients"
           @send="handleSend"
           @log="handleLog"
         />
