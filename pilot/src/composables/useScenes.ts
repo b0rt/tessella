@@ -139,9 +139,7 @@ export function useScenes(send: (msg: Record<string, unknown>) => boolean) {
   function startAutoPlay() {
     if (scenes.value.length === 0) return
     isPlaying.value = true
-    if (activeSceneIndex.value < 0) {
-      playScene(0)
-    }
+    playScene(0)
     scheduleNext()
   }
 
