@@ -55,7 +55,7 @@ Auf jedem Laptop im Browser öffnen:
 ```
 http://<SERVER-IP>:3000/
 ```
-→ Klick auf "Vollbild" für Kiosk-Modus
+→ Für Kiosk-Modus den Browser im Fullscreen starten (F11 oder `--kiosk` Flag, siehe unten)
 
 ### 6. Pilot öffnen
 Auf dem Steuer-Computer:
@@ -101,10 +101,10 @@ Die gebaute App wird nach `dist/pilot/` geschrieben und vom Server ausgeliefert.
 │   │   └── composables/# WebSocket-Verbindung
 │   └── package.json
 ├── ansible/            # Ansible Kiosk-Provisioning (siehe unten)
-├── scripts/            # Postinstall-Skripte (Fonts, Libs kopieren)
+├── scripts/            # Postinstall-Skripte (Fonts, Libs kopieren) und Hilfsskripte
 ├── dist/pilot/         # Gebaute Pilot-App
 ├── uploads/            # Hochgeladene Medien (Bilder, Videos)
-├── lib/                # Client-seitige Libraries (Three.js etc.)
+├── lib/                # Client-seitige Libraries (Three.js, MediaPipe WASM)
 └── fonts/              # Lokale Schriftarten
 ```
 
