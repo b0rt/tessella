@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted } from 'vue'
 import { useWebSocket } from '@/composables/useWebSocket'
+import { useTheme } from '@/composables/useTheme'
 import ClientList from '@/components/ClientList.vue'
 import TextPanel from '@/components/panels/TextPanel.vue'
 import ImagePanel from '@/components/panels/ImagePanel.vue'
@@ -13,6 +14,7 @@ import ScenesPanel from '@/components/panels/ScenesPanel.vue'
 import ActivityLog from '@/components/panels/ActivityLog.vue'
 
 const { connected, clients, logs, send, log, clearLogs } = useWebSocket()
+const { theme, toggleTheme } = useTheme()
 
 const selectedTarget = ref<number | 'all'>('all')
 const footerTab = ref<'scenes' | 'logs'>('scenes')
@@ -63,6 +65,15 @@ onUnmounted(() => {
         🎛️ Tessella
       </h1>
       <div class="flex items-center gap-4">
+        <Button
+          variant="outline"
+          size="sm"
+          @click="toggleTheme"
+          :title="theme === 'dark' ? 'Zum hellen Modus wechseln' : 'Zum dunklen Modus wechseln'"
+        >
+          <span v-if="theme === 'dark'">☀️ Hell</span>
+          <span v-else>🌙 Dunkel</span>
+        </Button>
         <Button variant="destructive" size="sm" @click="send({ type: 'clear', target: selectedTarget, style: 'fade' }); log('Displays geleert')">
           🗑 Alles stoppen
         </Button>
