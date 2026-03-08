@@ -85,7 +85,13 @@ def main():
     mean_interval = 1.0 / args.fps
     last_sent = {"x": 0.0, "y": 0.0, "z": 0.0}
 
-    print(f"Tracking at ~{args.fps} FPS (Poisson). Press Ctrl+C to stop.")
+    # ROI tracking state
+    roi_box = None        # (x, y, w, h) of last detected face
+    roi_padding = 1.8     # expand ROI by this factor on each side
+    roi_miss_limit = 5    # fall back to full frame after N misses
+    roi_misses = 0
+
+    print(f"Tracking at ~{args.fps} FPS (Poisson + ROI). Press Ctrl+C to stop.")
 
     try:
         while True:
@@ -95,8 +101,28 @@ def main():
 
             # Convert to grayscale for detection
             gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+
+            # ROI: crop around last known face position
+            roi_offset_x, roi_offset_y = 0, 0
+            used_roi = False
+            detect_gray = gray
+
+            if roi_box is not None:
+                rx, ry, rw, rh = roi_box
+                cx, cy = rx + rw // 2, ry + rh // 2
+                half_w = int(rw * roi_padding)
+                half_h = int(rh * roi_padding)
+                x0 = max(0, cx - half_w)
+                y0 = max(0, cy - half_h)
+                x1 = min(actual_w, cx + half_w)
+                y1 = min(actual_h, cy + half_h)
+                if (x1 - x0) > 30 and (y1 - y0) > 30:
+                    detect_gray = gray[y0:y1, x0:x1]
+                    roi_offset_x, roi_offset_y = x0, y0
+                    used_roi = True
+
             faces = face_cascade.detectMultiScale(
-                gray,
+                detect_gray,
                 scaleFactor=1.1,
                 minNeighbors=5,
                 minSize=(30, 30),
@@ -104,7 +130,15 @@ def main():
 
             if len(faces) > 0:
                 # Use the largest face
-                x, y, w, h = max(faces, key=lambda f: f[2] * f[3])
+                fx, fy, fw, fh = max(faces, key=lambda f: f[2] * f[3])
+
+                # Map back to full-frame coordinates
+                x = fx + roi_offset_x
+                y = fy + roi_offset_y
+                w, h = fw, fh
+
+                roi_box = (x, y, w, h)
+                roi_misses = 0
 
                 center_x = x + w / 2
                 center_y = y + h / 2
@@ -137,7 +171,13 @@ def main():
                     ws.send(msg)
 
                 if args.preview:
-                    cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
+                    color = (255, 255, 0) if used_roi else (0, 255, 0)
+                    cv2.rectangle(frame, (x, y), (x + w, y + h), color, 2)
+            else:
+                roi_misses += 1
+                if roi_misses >= roi_miss_limit:
+                    roi_box = None
+                    roi_misses = 0
 
             if args.preview:
                 cv2.imshow("Tessella Face Tracker", frame)
