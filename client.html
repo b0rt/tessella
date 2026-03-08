@@ -246,26 +246,6 @@
     background-size: 200px 200px;
   }
 
-  /* Fullscreen prompt */
-  #fs-prompt {
-    position: fixed;
-    inset: 0;
-    background: rgba(0,0,0,0.9);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    z-index: 10000;
-    cursor: pointer;
-  }
-  #fs-prompt span {
-    font-size: 1.2rem;
-    color: rgba(255,255,255,0.5);
-    letter-spacing: 0.2em;
-    text-transform: uppercase;
-    animation: breathe 2s ease-in-out infinite;
-  }
-  #fs-prompt.hidden { display: none; }
-
   /* Connection status */
   #status-dot {
     position: absolute;
@@ -294,10 +274,6 @@
 </head>
 <body>
 
-<div id="fs-prompt" onclick="goFullscreen()">
-  <span>Klick für Vollbild</span>
-</div>
-
 <div id="noise"></div>
 <div id="status-dot"></div>
 <div id="client-id"></div>
@@ -308,19 +284,6 @@
 
 <script src="/lib/three.min.js"></script>
 <script>
-// --- Fullscreen ---
-function goFullscreen() {
-  const el = document.documentElement;
-  const rfs = el.requestFullscreen || el.webkitRequestFullscreen || el.msRequestFullscreen;
-  if (rfs) {
-    rfs.call(el).catch(() => {});
-  }
-  // Always dismiss the prompt (iOS doesn't support fullscreen API)
-  document.getElementById('fs-prompt').classList.add('hidden');
-  // User gesture allows video playback on Android — activate wake lock
-  requestWakeLock();
-}
-
 // --- WebSocket ---
 let ws;
 let clientInfo = { id: 0, name: 'Laptop' };
