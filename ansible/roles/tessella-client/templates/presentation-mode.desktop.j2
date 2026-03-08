@@ -1,0 +1,10 @@
+[Desktop Entry]
+# Tessella Kiosk – XFCE Präsentationsmodus aktivieren
+# Generiert von Ansible – nicht manuell bearbeiten!
+Type=Application
+Name=Tessella Präsentationsmodus
+Comment=Aktiviert XFCE Präsentationsmodus (verhindert DPMS und Bildschirmschoner)
+Exec=bash -c "sleep 3; xfconf-query -c xfce4-power-manager -p /xfce4-power-manager/presentation-mode -n -t bool -s true"
+Hidden=false
+NoDisplay=false
+X-GNOME-Autostart-enabled=true

@@ -41,6 +41,7 @@ ansible/
             ├── lightdm-autologin.conf.j2     # LightDM Autologin
             ├── sddm-autologin.conf.j2        # SDDM Autologin
             ├── disable-screensaver.desktop.j2
+            ├── presentation-mode.desktop.j2
             ├── hide-cursor.desktop.j2
             └── mute-audio.desktop.j2
 ```
@@ -69,6 +70,7 @@ ansible/
 | `tessella_client_disable_screensaver`  | Bool   | `true`             | Bildschirmschoner deaktivieren       |
 | `tessella_client_disable_power_management` | Bool | `true`          | Sleep/Suspend deaktivieren           |
 | `tessella_client_mute_audio`           | Bool   | `true`             | Audio stummschalten                  |
+| `tessella_client_presentation_mode`    | Bool   | `true`             | XFCE Präsentationsmodus (MX Linux)   |
 
 ## Kommandos
 

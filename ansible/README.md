@@ -10,6 +10,7 @@ Ansible-Konfiguration zur automatischen Einrichtung von Client-PCs als Kiosk-Dis
 - Autologin (LightDM oder SDDM)
 - Firefox Enterprise Policies (keine Updates, keine Telemetrie, Homepage gelockt)
 - Bildschirmschoner und DPMS deaktiviert
+- XFCE Präsentationsmodus aktiviert (MX Linux)
 - Mauszeiger automatisch versteckt
 - Audio stummgeschaltet
 - Sleep/Suspend/Hibernate deaktiviert
@@ -123,6 +124,7 @@ ansible/
             ├── lightdm-autologin.conf.j2
             ├── sddm-autologin.conf.j2
             ├── disable-screensaver.desktop.j2
+            ├── presentation-mode.desktop.j2
             ├── hide-cursor.desktop.j2
             └── mute-audio.desktop.j2
 ```
@@ -138,6 +140,7 @@ Alle Features können in `group_vars/all.yml` einzeln aktiviert/deaktiviert werd
 | `tessella_client_disable_screensaver`  | `true`  | Bildschirmschoner deaktivieren  |
 | `tessella_client_disable_power_management` | `true` | Sleep/Suspend deaktivieren    |
 | `tessella_client_mute_audio`           | `true`  | Audio stummschalten             |
+| `tessella_client_presentation_mode`    | `true`  | XFCE Präsentationsmodus (MX Linux) |
 | `tessella_client_reboot_after_provision` | `false` | Neustart nach Provisionierung |
 
 ## Troubleshooting
@@ -203,12 +206,17 @@ ansible all -m ansible.builtin.ping -vvv
 
 ### Bildschirm geht trotzdem aus
 
-1. Prüfe ob DPMS deaktiviert ist:
+1. Prüfe ob XFCE Präsentationsmodus aktiv ist (MX Linux):
+   ```bash
+   xfconf-query -c xfce4-power-manager -p /xfce4-power-manager/presentation-mode
+   ```
+
+2. Prüfe ob DPMS deaktiviert ist:
    ```bash
    xset q | grep -A2 "DPMS"
    ```
 
-2. Prüfe ob die systemd Sleep-Targets maskiert sind:
+3. Prüfe ob die systemd Sleep-Targets maskiert sind:
    ```bash
    systemctl status sleep.target suspend.target hibernate.target
    ```

@@ -250,6 +250,25 @@
     state: absent
   when: not tessella_client_mute_audio
 
+# --- XFCE Präsentationsmodus (MX Linux) --------------------------------------
+- name: XFCE Präsentationsmodus als Autostart einrichten
+  ansible.builtin.template:
+    src: presentation-mode.desktop.j2
+    dest: "/home/{{ tessella_client_user }}/.config/autostart/tessella-presentation-mode.desktop"
+    owner: "{{ tessella_client_user }}"
+    group: "{{ tessella_client_user }}"
+    mode: "0644"
+  when:
+    - tessella_client_presentation_mode
+    - ansible_os_family == "Debian"
+
+- name: XFCE Präsentationsmodus entfernen wenn deaktiviert
+  ansible.builtin.file:
+    path: "/home/{{ tessella_client_user }}/.config/autostart/tessella-presentation-mode.desktop"
+    state: absent
+  when:
+    - not tessella_client_presentation_mode or ansible_os_family != "Debian"
+
 # ╔═══════════════════════════════════════════════════════════════════════════╗
 # ║ Power Management                                                          ║
 # ╚═══════════════════════════════════════════════════════════════════════════╝
