@@ -4,7 +4,6 @@ import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import { Input } from '@/components/ui/input'
-import { FilesetResolver, FaceDetector } from '@mediapipe/tasks-vision'
 import type { Client } from '@/composables/useWebSocket'
 
 const props = defineProps<{
@@ -31,14 +30,13 @@ const canvasRef = ref<HTMLCanvasElement | null>(null)
 const faceDetected = ref(false)
 const lastFacePos = ref({ x: 0, y: 0 })
 const isInitializing = ref(false)
+const usingRoi = ref(false)
 
 // Tracking performance settings
 const targetFps = ref(8)
 const movementThreshold = ref(0.02)
 
-let detector: FaceDetector | null = null
-let lastVideoTime = -1
-let animFrameId: number | null = null
+let worker: Worker | null = null
 let detectionTimeout: ReturnType<typeof setTimeout> | null = null
 let lastSentX = 0
 let lastSentY = 0
@@ -165,131 +163,149 @@ async function startTracking() {
       await videoRef.value.play()
     }
 
-    // 2. Initialize MediaPipe Face Detector
-    emit('log', 'Lade MediaPipe Vision...')
-    const vision = await FilesetResolver.forVisionTasks('/lib/mediapipe/wasm')
+    // 2. Initialize face detection Web Worker
+    emit('log', 'Starte Face Detection Worker...')
+    worker = new Worker(
+      new URL('../../workers/faceDetectionWorker.ts', import.meta.url),
+      { type: 'module' }
+    )
 
-    emit('log', 'Lade Face Detection Model...')
-    detector = await FaceDetector.createFromOptions(vision, {
-      baseOptions: {
-        modelAssetPath: '/lib/mediapipe/blaze_face_short_range.tflite',
-        delegate: 'GPU'
-      },
-      runningMode: 'VIDEO',
-      minDetectionConfidence: 0.5
+    // Handle messages from worker
+    worker.onmessage = (e) => {
+      const msg = e.data
+      if (msg.type === 'ready') {
+        tracking.value = true
+        isInitializing.value = false
+        emit('log', 'Face Tracking gestartet (Web Worker + ROI)')
+        scheduleDetection()
+      } else if (msg.type === 'error') {
+        emit('log', `Worker-Fehler: ${msg.message}`)
+        stopTracking()
+      } else if (msg.type === 'face') {
+        handleFaceResult(msg)
+      } else if (msg.type === 'no-face') {
+        faceDetected.value = false
+        usingRoi.value = false
+        scheduleDetection()
+      }
+    }
+
+    worker.onerror = (err) => {
+      emit('log', `Worker-Fehler: ${err.message}`)
+      console.error('Worker error:', err)
+      stopTracking()
+    }
+
+    // Initialize MediaPipe inside the worker
+    worker.postMessage({
+      type: 'init',
+      wasmPath: '/lib/mediapipe/wasm',
+      modelPath: '/lib/mediapipe/blaze_face_short_range.tflite'
     })
-
-    tracking.value = true
-    lastVideoTime = -1
-    emit('log', 'Face Tracking gestartet')
-
-    // Start detection loop
-    detectFaces()
   } catch (err) {
     emit('log', `Fehler: ${(err as Error).message}`)
     console.error('Face tracking error:', err)
-    stopTracking()
-  } finally {
     isInitializing.value = false
+    stopTracking()
   }
 }
 
-function detectFaces() {
-  if (!tracking.value || !detector || !videoRef.value) return
+function scheduleDetection() {
+  if (!tracking.value || !worker || !videoRef.value) return
 
-  if (videoRef.value.readyState >= 2 && videoRef.value.currentTime !== lastVideoTime) {
-    lastVideoTime = videoRef.value.currentTime
+  const delay = poissonDelay()
+  detectionTimeout = setTimeout(() => {
+    captureAndSend()
+  }, delay)
+}
 
-    try {
-      const result = detector.detectForVideo(videoRef.value, performance.now())
+async function captureAndSend() {
+  if (!tracking.value || !worker || !videoRef.value) return
+  if (videoRef.value.readyState < 2) {
+    scheduleDetection()
+    return
+  }
 
-      const face = result.detections[0]
-      if (face && face.boundingBox) {
-        faceDetected.value = true
-        const box = face.boundingBox
+  try {
+    // Capture frame as ImageBitmap — transferable to the worker (zero-copy)
+    const bitmap = await createImageBitmap(videoRef.value)
+    worker.postMessage({ type: 'detect', frame: bitmap }, [bitmap])
+  } catch {
+    scheduleDetection()
+  }
+}
 
-        const centerX = box.originX + box.width / 2
-        const centerY = box.originY + box.height / 2
+function handleFaceResult(msg: { box: { originX: number; originY: number; width: number; height: number }; frameWidth: number; frameHeight: number; usedRoi: boolean }) {
+  faceDetected.value = true
+  usingRoi.value = msg.usedRoi
+  const box = msg.box
+  const videoWidth = msg.frameWidth
+  const videoHeight = msg.frameHeight
 
-        // Normalize to -1 to 1 (invert X for mirror effect)
-        const videoWidth = videoRef.value.videoWidth || 640
-        const videoHeight = videoRef.value.videoHeight || 480
-        const normalizedX = -((centerX / videoWidth) * 2 - 1)
-        const normalizedY = -((centerY / videoHeight) * 2 - 1)
+  const centerX = box.originX + box.width / 2
+  const centerY = box.originY + box.height / 2
 
-        // Estimate depth from face size (larger face = closer)
-        const faceSize = box.width * box.height
-        const normalizedZ = Math.max(1, 10 - (faceSize / 10000))
+  // Normalize to -1 to 1 (invert X for mirror effect)
+  const normalizedX = -((centerX / videoWidth) * 2 - 1)
+  const normalizedY = -((centerY / videoHeight) * 2 - 1)
 
-        lastFacePos.value = { x: normalizedX, y: normalizedY }
+  // Estimate depth from face size (larger face = closer)
+  const faceSize = box.width * box.height
+  const normalizedZ = Math.max(1, 10 - (faceSize / 10000))
 
-        // Only send gaze update if position changed beyond threshold
-        const gazeX = normalizedX * 3
-        const gazeY = normalizedY * 2
-        const dx = Math.abs(gazeX - lastSentX)
-        const dy = Math.abs(gazeY - lastSentY)
-        const dz = Math.abs(normalizedZ - lastSentZ)
+  lastFacePos.value = { x: normalizedX, y: normalizedY }
 
-        if (dx > movementThreshold.value || dy > movementThreshold.value || dz > 0.5) {
-          lastSentX = gazeX
-          lastSentY = gazeY
-          lastSentZ = normalizedZ
+  // Only send gaze update if position changed beyond threshold
+  const gazeX = normalizedX * 3
+  const gazeY = normalizedY * 2
+  const dx = Math.abs(gazeX - lastSentX)
+  const dy = Math.abs(gazeY - lastSentY)
+  const dz = Math.abs(normalizedZ - lastSentZ)
 
-          emit('send', {
-            type: 'eyeball-gaze',
-            target: 'all',
-            x: gazeX,
-            y: gazeY,
-            z: normalizedZ
-          })
-        }
+  if (dx > movementThreshold.value || dy > movementThreshold.value || dz > 0.5) {
+    lastSentX = gazeX
+    lastSentY = gazeY
+    lastSentZ = normalizedZ
 
-        // Draw on canvas for preview
-        if (canvasRef.value) {
-          const ctx = canvasRef.value.getContext('2d')
-          if (ctx) {
-            ctx.clearRect(0, 0, 160, 120)
-            ctx.drawImage(videoRef.value, 0, 0, 160, 120)
-            ctx.strokeStyle = '#00ff00'
-            ctx.lineWidth = 2
-            ctx.strokeRect(
-              box.originX / (videoWidth / 160),
-              box.originY / (videoHeight / 120),
-              box.width / (videoWidth / 160),
-              box.height / (videoHeight / 120)
-            )
-          }
-        }
-      } else {
-        faceDetected.value = false
-      }
-    } catch (err) {
-      console.error('Detection error:', err)
+    emit('send', {
+      type: 'eyeball-gaze',
+      target: 'all',
+      x: gazeX,
+      y: gazeY,
+      z: normalizedZ
+    })
+  }
+
+  // Draw on canvas for preview
+  if (canvasRef.value && videoRef.value) {
+    const ctx = canvasRef.value.getContext('2d')
+    if (ctx) {
+      ctx.clearRect(0, 0, 160, 120)
+      ctx.drawImage(videoRef.value, 0, 0, 160, 120)
+      // Green box = full frame, cyan box = ROI crop
+      ctx.strokeStyle = msg.usedRoi ? '#00ffff' : '#00ff00'
+      ctx.lineWidth = 2
+      ctx.strokeRect(
+        box.originX / (videoWidth / 160),
+        box.originY / (videoHeight / 120),
+        box.width / (videoWidth / 160),
+        box.height / (videoHeight / 120)
+      )
     }
   }
 
-  // Continue loop with Poisson-distributed intervals
-  if (tracking.value) {
-    const delay = poissonDelay()
-    detectionTimeout = setTimeout(() => {
-      animFrameId = requestAnimationFrame(detectFaces)
-    }, delay)
-  }
+  scheduleDetection()
 }
 
 function stopTracking() {
   tracking.value = false
   isInitializing.value = false
   faceDetected.value = false
+  usingRoi.value = false
 
   if (detectionTimeout !== null) {
     clearTimeout(detectionTimeout)
     detectionTimeout = null
-  }
-
-  if (animFrameId !== null) {
-    cancelAnimationFrame(animFrameId)
-    animFrameId = null
   }
 
   if (videoRef.value?.srcObject) {
@@ -303,9 +319,9 @@ function stopTracking() {
     if (ctx) ctx.clearRect(0, 0, 160, 120)
   }
 
-  if (detector) {
-    detector.close()
-    detector = null
+  if (worker) {
+    worker.terminate()
+    worker = null
   }
 
   emit('log', 'Face Tracking gestoppt')
@@ -429,6 +445,7 @@ onUnmounted(() => {
               <div>Status: {{ faceDetected ? 'Gesicht erkannt' : 'Kein Gesicht' }}</div>
               <div v-if="faceDetected">
                 X: {{ lastFacePos.x.toFixed(2) }}, Y: {{ lastFacePos.y.toFixed(2) }}
+                <span v-if="usingRoi" class="text-cyan-400 ml-1">(ROI)</span>
               </div>
             </div>
           </div>
