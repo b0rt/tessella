@@ -32,9 +32,25 @@ const faceDetected = ref(false)
 const lastFacePos = ref({ x: 0, y: 0 })
 const isInitializing = ref(false)
 
+// Tracking performance settings
+const targetFps = ref(8)
+const movementThreshold = ref(0.02)
+
 let detector: FaceDetector | null = null
 let lastVideoTime = -1
 let animFrameId: number | null = null
+let detectionTimeout: ReturnType<typeof setTimeout> | null = null
+let lastSentX = 0
+let lastSentY = 0
+let lastSentZ = 0
+
+// Poisson-distributed interval: next delay drawn from exponential distribution
+function poissonDelay(): number {
+  const meanInterval = 1000 / targetFps.value
+  // Exponential distribution: -mean * ln(U), clamped to reasonable bounds
+  const u = Math.max(0.001, Math.random())
+  return Math.min(Math.max(meanInterval * -Math.log(u), 20), meanInterval * 3)
+}
 
 // Display configurations
 const displayConfigs = ref<Record<number, { x: number; y: number; z: number; rotation: number }>>({})
@@ -207,14 +223,26 @@ function detectFaces() {
 
         lastFacePos.value = { x: normalizedX, y: normalizedY }
 
-        // Send gaze update
-        emit('send', {
-          type: 'eyeball-gaze',
-          target: 'all',
-          x: normalizedX * 3,
-          y: normalizedY * 2,
-          z: normalizedZ
-        })
+        // Only send gaze update if position changed beyond threshold
+        const gazeX = normalizedX * 3
+        const gazeY = normalizedY * 2
+        const dx = Math.abs(gazeX - lastSentX)
+        const dy = Math.abs(gazeY - lastSentY)
+        const dz = Math.abs(normalizedZ - lastSentZ)
+
+        if (dx > movementThreshold.value || dy > movementThreshold.value || dz > 0.5) {
+          lastSentX = gazeX
+          lastSentY = gazeY
+          lastSentZ = normalizedZ
+
+          emit('send', {
+            type: 'eyeball-gaze',
+            target: 'all',
+            x: gazeX,
+            y: gazeY,
+            z: normalizedZ
+          })
+        }
 
         // Draw on canvas for preview
         if (canvasRef.value) {
@@ -240,11 +268,12 @@ function detectFaces() {
     }
   }
 
-  // Continue loop (~20 FPS)
+  // Continue loop with Poisson-distributed intervals
   if (tracking.value) {
-    animFrameId = requestAnimationFrame(() => {
-      setTimeout(detectFaces, 50)
-    })
+    const delay = poissonDelay()
+    detectionTimeout = setTimeout(() => {
+      animFrameId = requestAnimationFrame(detectFaces)
+    }, delay)
   }
 }
 
@@ -252,6 +281,11 @@ function stopTracking() {
   tracking.value = false
   isInitializing.value = false
   faceDetected.value = false
+
+  if (detectionTimeout !== null) {
+    clearTimeout(detectionTimeout)
+    detectionTimeout = null
+  }
 
   if (animFrameId !== null) {
     cancelAnimationFrame(animFrameId)
@@ -373,6 +407,22 @@ onUnmounted(() => {
               >
                 Stoppen
               </Button>
+            </div>
+
+            <div class="space-y-1">
+              <div class="flex gap-2 items-center">
+                <Label class="text-xs whitespace-nowrap">FPS:</Label>
+                <Input
+                  type="number"
+                  v-model.number="targetFps"
+                  min="1"
+                  max="30"
+                  step="1"
+                  class="h-7 text-xs w-16"
+                  :disabled="tracking"
+                />
+                <span class="text-xs text-muted-foreground">(Poisson)</span>
+              </div>
             </div>
 
             <div v-if="tracking" class="text-sm text-muted-foreground">
