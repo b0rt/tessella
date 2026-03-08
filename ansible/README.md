@@ -126,7 +126,8 @@ ansible/
             ├── disable-screensaver.desktop.j2
             ├── presentation-mode.desktop.j2
             ├── hide-cursor.desktop.j2
-            └── mute-audio.desktop.j2
+            ├── mute-audio.desktop.j2
+            └── xfce4-session.xml.j2
 ```
 
 ## Feature-Flags
