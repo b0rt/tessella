@@ -8,6 +8,7 @@ const PORT = 3000;
 const UPLOADS_DIR = path.join(__dirname, "uploads");
 const DATA_DIR = path.join(__dirname, "data");
 const SCENES_FILE = path.join(DATA_DIR, "scenes.json");
+const PRECOMPOSE_FILE = path.join(DATA_DIR, "precompose.json");
 
 // --- Ensure directories exist ---
 if (!fs.existsSync(UPLOADS_DIR)) {
@@ -22,6 +23,75 @@ let clients = new Map(); // ws -> { id, name }
 let clientIdCounter = 0;
 let contentHistory = []; // All content sent so far
 let uploadCounter = 0;
+
+// --- Precompose state ---
+let precomposeLayout = null; // Currently loaded layout
+let precomposeActive = false; // Whether precompose is active
+
+function loadPrecomposeLayout() {
+  try {
+    if (fs.existsSync(PRECOMPOSE_FILE)) {
+      precomposeLayout = JSON.parse(fs.readFileSync(PRECOMPOSE_FILE, "utf-8"));
+    }
+  } catch (e) {
+    console.error("Failed to load precompose layout:", e);
+  }
+}
+
+function savePrecomposeLayout() {
+  try {
+    fs.writeFileSync(PRECOMPOSE_FILE, JSON.stringify(precomposeLayout, null, 2));
+  } catch (e) {
+    console.error("Failed to save precompose layout:", e);
+  }
+}
+
+function getPrecomposeStatus() {
+  return {
+    type: "precompose-status",
+    layout: precomposeLayout,
+    active: precomposeActive
+  };
+}
+
+function pushSlotContent(slot) {
+  if (!slot.assignedClientId) return;
+  const clientWs = findClientWs(slot.assignedClientId);
+  if (!clientWs) return;
+
+  // Set background color
+  if (slot.bgColor && slot.bgColor !== "#0a0a0a") {
+    const colorMsg = { type: "show-color", color: slot.bgColor, target: slot.assignedClientId, id: Date.now() };
+    clientWs.send(JSON.stringify(colorMsg));
+  }
+
+  // Send display config
+  if (slot.displayConfig) {
+    const configMsg = {
+      type: "config-display",
+      target: slot.assignedClientId,
+      position: { x: slot.displayConfig.x, y: slot.displayConfig.y, z: slot.displayConfig.z },
+      rotation: slot.displayConfig.rotation
+    };
+    clientWs.send(JSON.stringify(configMsg));
+  }
+
+  // Push each content item
+  for (const item of slot.content || []) {
+    const resolved = { ...item, target: slot.assignedClientId };
+    handlePilotMessage(resolved);
+  }
+}
+
+function findClientWs(clientId) {
+  for (const [ws, info] of clients) {
+    if (info.id === clientId) return ws;
+  }
+  return null;
+}
+
+// Load precompose layout on startup
+loadPrecomposeLayout();
 
 // --- Serve static files ---
 function serveFile(res, filePath, contentType) {
@@ -300,6 +370,33 @@ const clientServer = http.createServer((req, res) => {
     return;
   }
 
+  // --- Precompose REST API ---
+  if (req.method === "GET" && req.url === "/api/precompose") {
+    res.writeHead(200, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ layout: precomposeLayout, active: precomposeActive }));
+    return;
+  }
+
+  if (req.method === "PUT" && req.url === "/api/precompose") {
+    let body = "";
+    req.on("data", chunk => { body += chunk.toString(); });
+    req.on("end", () => {
+      try {
+        const data = JSON.parse(body);
+        precomposeLayout = data.layout;
+        precomposeActive = !!data.active;
+        savePrecomposeLayout();
+        broadcastToPilots(getPrecomposeStatus());
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ ok: true }));
+      } catch (e) {
+        res.writeHead(400);
+        res.end(JSON.stringify({ error: "Invalid JSON" }));
+      }
+    });
+    return;
+  }
+
   // Serve static files
   if (req.url === "/" || req.url === "/client") {
     serveFile(res, path.join(__dirname, "client.html"), "text/html");
@@ -354,6 +451,9 @@ wss.on("connection", (ws, req) => {
       clients: Array.from(clients.values())
     }));
 
+    // Send precompose status to pilot
+    ws.send(JSON.stringify(getPrecomposeStatus()));
+
     ws.on("message", (data) => {
       try {
         const msg = JSON.parse(data);
@@ -395,6 +495,19 @@ wss.on("connection", (ws, req) => {
       }));
     }
 
+    // Auto-assign to precompose slot if active
+    if (precomposeActive && precomposeLayout && precomposeLayout.assignmentMode === "auto") {
+      const slot = (precomposeLayout.slots || []).find(s => !s.assignedClientId);
+      if (slot) {
+        slot.assignedClientId = clientInfo.id;
+        savePrecomposeLayout();
+        console.log(`🔗 Auto-assigned ${clientInfo.name} to slot "${slot.name}"`);
+        // Push slot content after a short delay for client to be ready
+        setTimeout(() => pushSlotContent(slot), 500);
+        broadcastToPilots(getPrecomposeStatus());
+      }
+    }
+
     // Notify pilot about new client
     broadcastToPilots({
       type: "client-list",
@@ -402,6 +515,17 @@ wss.on("connection", (ws, req) => {
     });
 
     ws.on("close", () => {
+      // Unassign from precompose slot
+      if (precomposeLayout) {
+        const slot = (precomposeLayout.slots || []).find(s => s.assignedClientId === clientInfo.id);
+        if (slot) {
+          slot.assignedClientId = null;
+          savePrecomposeLayout();
+          console.log(`🔗 Unassigned slot "${slot.name}" (client disconnected)`);
+          broadcastToPilots(getPrecomposeStatus());
+        }
+      }
+
       clients.delete(ws);
       console.log(`💻 Client disconnected (${clients.size} remaining)`);
       broadcastToPilots({
@@ -671,6 +795,116 @@ function handlePilotMessage(msg) {
       };
       broadcastToClients(content);
       console.log(`📍 Display ${msg.target} configured: pos(${msg.position?.x}, ${msg.position?.y}, ${msg.position?.z}) rot(${msg.rotation}°)`);
+      break;
+    }
+
+    case "precompose-assign": {
+      // Manually assign a client to a slot
+      if (precomposeLayout) {
+        const slot = (precomposeLayout.slots || []).find(s => s.id === msg.slotId);
+        if (slot) {
+          slot.assignedClientId = msg.clientId;
+          savePrecomposeLayout();
+          if (msg.clientId) {
+            pushSlotContent(slot);
+          }
+          broadcastToPilots(getPrecomposeStatus());
+        }
+      }
+      break;
+    }
+
+    case "precompose-unassign": {
+      if (precomposeLayout) {
+        const slot = (precomposeLayout.slots || []).find(s => s.id === msg.slotId);
+        if (slot) {
+          // Clear the client display before unassigning
+          if (slot.assignedClientId) {
+            handlePilotMessage({ type: "clear", target: slot.assignedClientId, style: "fade" });
+          }
+          slot.assignedClientId = null;
+          savePrecomposeLayout();
+          broadcastToPilots(getPrecomposeStatus());
+        }
+      }
+      break;
+    }
+
+    case "precompose-push": {
+      // Push a single slot's content to its assigned client
+      if (precomposeLayout) {
+        const slot = (precomposeLayout.slots || []).find(s => s.id === msg.slotId);
+        if (slot && slot.assignedClientId) {
+          // Clear first, then push
+          handlePilotMessage({ type: "clear", target: slot.assignedClientId, style: "fade" });
+          setTimeout(() => pushSlotContent(slot), 300);
+        }
+      }
+      break;
+    }
+
+    case "precompose-push-all": {
+      // Push all slots' content
+      if (precomposeLayout) {
+        for (const slot of precomposeLayout.slots || []) {
+          if (slot.assignedClientId) {
+            handlePilotMessage({ type: "clear", target: slot.assignedClientId, style: "fade" });
+          }
+        }
+        setTimeout(() => {
+          for (const slot of precomposeLayout.slots || []) {
+            if (slot.assignedClientId) {
+              pushSlotContent(slot);
+            }
+          }
+        }, 300);
+      }
+      break;
+    }
+
+    case "precompose-activate": {
+      precomposeActive = true;
+      if (precomposeLayout && precomposeLayout.assignmentMode === "auto") {
+        // Auto-assign currently connected clients to unassigned slots
+        const clientList = Array.from(clients.values());
+        const assignedIds = new Set((precomposeLayout.slots || []).filter(s => s.assignedClientId).map(s => s.assignedClientId));
+        const unassignedClients = clientList.filter(c => !assignedIds.has(c.id));
+        let ci = 0;
+        for (const slot of precomposeLayout.slots || []) {
+          if (!slot.assignedClientId && ci < unassignedClients.length) {
+            slot.assignedClientId = unassignedClients[ci].id;
+            ci++;
+          }
+        }
+        savePrecomposeLayout();
+        // Push content to all assigned slots
+        setTimeout(() => {
+          for (const slot of precomposeLayout.slots || []) {
+            if (slot.assignedClientId) {
+              pushSlotContent(slot);
+            }
+          }
+        }, 300);
+      }
+      broadcastToPilots(getPrecomposeStatus());
+      console.log("🔗 Precompose layout activated");
+      break;
+    }
+
+    case "precompose-deactivate": {
+      precomposeActive = false;
+      // Clear assignments
+      if (precomposeLayout) {
+        for (const slot of precomposeLayout.slots || []) {
+          if (slot.assignedClientId) {
+            handlePilotMessage({ type: "clear", target: slot.assignedClientId, style: "fade" });
+          }
+          slot.assignedClientId = null;
+        }
+        savePrecomposeLayout();
+      }
+      broadcastToPilots(getPrecomposeStatus());
+      console.log("🔗 Precompose layout deactivated");
       break;
     }
 
