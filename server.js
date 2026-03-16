@@ -553,6 +553,12 @@ wss.on("connection", (ws, req) => {
 });
 
 function handlePilotMessage(msg) {
+  // Remove eyeball from content history when new content replaces it
+  const contentTypes = ["send-text", "send-image", "send-tiled-image", "send-video", "send-color", "cascade-text", "cascade-words", "clear"];
+  if (contentTypes.includes(msg.type)) {
+    contentHistory = contentHistory.filter(c => c.type !== "show-eyeball");
+  }
+
   switch (msg.type) {
     case "send-text": {
       const content = {
@@ -771,6 +777,8 @@ function handlePilotMessage(msg) {
         type: "hide-eyeball",
         target: msg.target || "all"
       };
+      // Remove eyeball entries from content history
+      contentHistory = contentHistory.filter(c => c.type !== "show-eyeball");
       broadcastToClients(content);
       console.log(`👁️  Eyeball hidden on ${msg.target || "all"}`);
       break;

@@ -8,7 +8,6 @@ import ImagePanel from '@/components/panels/ImagePanel.vue'
 import VideoPanel from '@/components/panels/VideoPanel.vue'
 import EyeballPanel from '@/components/panels/EyeballPanel.vue'
 import BackgroundPanel from '@/components/panels/BackgroundPanel.vue'
-import EffectsPanel from '@/components/panels/EffectsPanel.vue'
 import { Button } from '@/components/ui/button'
 import ScenesPanel from '@/components/panels/ScenesPanel.vue'
 import PrecomposePanel from '@/components/panels/PrecomposePanel.vue'
@@ -138,12 +137,6 @@ onUnmounted(() => {
           @log="handleLog"
         />
 
-        <EffectsPanel
-          :key="formKey"
-          :selectedTarget="selectedTarget"
-          @send="handleSend"
-          @log="handleLog"
-        />
       </main>
     </div>
 

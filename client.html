@@ -351,6 +351,7 @@ function handleMessage(msg) {
       break;
 
     case 'show-color':
+      if (eyeballActive) hideEyeball();
       if (clearBgTimer) { clearTimeout(clearBgTimer); clearBgTimer = null; }
       explicitBgColor = msg.color;
       document.body.style.background = msg.color;
@@ -384,6 +385,7 @@ function handleMessage(msg) {
 
 function showText(msg) {
   hideIdle();
+  if (eyeballActive) hideEyeball();
   const layer = createLayer(msg.position);
   const el = document.createElement('div');
   el.className = 'display-text';
@@ -411,6 +413,7 @@ function showText(msg) {
 
 function showImage(msg) {
   hideIdle();
+  if (eyeballActive) hideEyeball();
   const layer = createLayer(msg.position);
   const img = document.createElement('img');
   img.className = 'display-image anim-fade-in';
@@ -431,6 +434,7 @@ function showImage(msg) {
 
 function showTiledImage(msg) {
   hideIdle();
+  if (eyeballActive) hideEyeball();
   const { tile, url, style, preserveAspect } = msg;
   const { col, row, cols, rows } = tile;
 
@@ -512,6 +516,7 @@ let explicitBgColor = null; // Track explicitly set background color
 
 function showVideo(msg) {
   hideIdle();
+  if (eyeballActive) hideEyeball();
   // Remove any existing video first
   if (currentVideo) {
     currentVideo.pause();
@@ -601,6 +606,13 @@ function controlVideo(msg) {
 }
 
 function clearContent(style) {
+  // Hide eyeball if active
+  if (eyeballActive) {
+    const container = document.getElementById('eyeball-container');
+    container.classList.remove('active');
+    eyeballActive = false;
+  }
+
   // Stop and clear any playing video
   if (currentVideo) {
     currentVideo.pause();
