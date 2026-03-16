@@ -1,4 +1,11 @@
 #!/usr/bin/env python3
+# /// script
+# requires-python = ">=3.10"
+# dependencies = [
+#     "opencv-python",
+#     "websocket-client",
+# ]
+# ///
 """
 Lightweight face tracker for Tessella.
 
@@ -7,12 +14,12 @@ detects faces using OpenCV, and sends gaze data to the Tessella
 server over WebSocket.
 
 Requirements:
-    pip install opencv-python websocket-client
+    uv pip install -r scripts/requirements.txt
 
 Usage:
-    python face-tracker.py                          # defaults: localhost:3000, camera 0
-    python face-tracker.py --server 192.168.1.10    # specify server IP
-    python face-tracker.py --camera 1 --fps 5       # camera index & target FPS
+    uv run scripts/face-tracker.py                          # defaults: localhost:3000, camera 0
+    uv run scripts/face-tracker.py --server 192.168.1.10    # specify server IP
+    uv run scripts/face-tracker.py --camera 1 --fps 5       # camera index & target FPS
 """
 
 import argparse

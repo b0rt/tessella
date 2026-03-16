@@ -128,6 +128,43 @@ Die gebaute App wird nach `dist/pilot/` geschrieben und vom Server ausgeliefert.
 - Subtile Idle-Animation wenn leer
 - Connection-Status-Indikator
 
+## Face Tracking (Python)
+
+Neben dem Browser-basierten Face Tracking (im Pilot-Panel) gibt es ein separates Python-Script,
+das auf einem externen Gerät (z.B. Raspberry Pi) laufen kann. Es erkennt Gesichter per Kamera
+und sendet die Gaze-Daten per WebSocket an den Tessella-Server.
+
+### Setup mit uv
+
+[uv](https://docs.astral.sh/uv/) ist ein schneller Python-Paketmanager, der Python-Versionen,
+Virtual Environments und Dependencies in einem Tool vereint.
+
+```bash
+# uv installieren (falls noch nicht vorhanden)
+curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# Dependencies installieren und Script starten (erstellt venv automatisch)
+uv run scripts/face-tracker.py
+
+# Mit Optionen
+uv run scripts/face-tracker.py --server 192.168.1.10 --camera 1 --fps 5
+```
+
+Alternativ manuell:
+```bash
+uv venv
+source .venv/bin/activate
+uv pip install -r scripts/requirements.txt
+python scripts/face-tracker.py --server <SERVER-IP>
+```
+
+### Ablauf
+
+1. Tessella-Server starten (`npm start`)
+2. Im Pilot-Panel den Eyeball auf den gewünschten Displays aktivieren
+3. Face Tracker auf dem Gerät mit Kamera starten
+4. Die Displays zeigen ein 3D-Auge, das dem erkannten Gesicht folgt
+
 ## Tipps für die Installation
 
 ### Browser-Kiosk-Modus
