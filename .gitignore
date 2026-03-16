@@ -11,3 +11,4 @@
 # Ansible – lokale Konfiguration (enthält IP-Adressen und Benutzerdaten)
 ansible/inventories/hosts.yml
 ansible/group_vars/all.yml
+__pycache__/
