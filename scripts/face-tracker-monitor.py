@@ -4,18 +4,24 @@
 # dependencies = [
 #     "opencv-python",
 #     "websocket-client",
-#     "Pillow",
+#     "numpy",
 # ]
 # ///
 """
 Face Tracking Control Monitor für Tessella.
 
-Kleines GUI-Fenster mit Kamera-Vorschau, Verbindungssteuerung
-und Live-Gaze-Daten.
+OpenCV-basiertes GUI-Fenster mit Kamera-Vorschau, Verbindungssteuerung
+und Live-Gaze-Daten. Keine tkinter-Abhängigkeit.
 
 Usage:
     uv run scripts/face-tracker-monitor.py
     uv run scripts/face-tracker-monitor.py --server 192.168.1.10
+
+Tastenbelegung:
+    c - Verbinden / Trennen
+    e - Eyeball anzeigen
+    h - Eyeball ausblenden
+    q - Beenden
 """
 
 import argparse
@@ -24,11 +30,9 @@ import math
 import random
 import threading
 import time
-import tkinter as tk
-from tkinter import ttk
 
 import cv2
-from PIL import Image, ImageTk
+import numpy as np
 import websocket
 
 
@@ -56,10 +60,11 @@ class FaceTracker:
         self.last_sent = {"x": 0.0, "y": 0.0, "z": 0.0}
         self.current_gaze = {"x": 0.0, "y": 0.0, "z": 0.0}
         self.face_detected = False
-        self.frame_rgb = None
+        self.frame_display = None
         self.face_rect = None  # (x, y, w, h) in frame coords
         self.roi_active = False
         self.client_count = 0
+        self.status_text = "Getrennt"
 
         # ROI state
         self._roi_box = None
@@ -91,13 +96,18 @@ class FaceTracker:
             except Exception:
                 pass
             self.connected = True
-            return "Verbunden"
+            status = f"Verbunden ({self.client_count} Clients)"
+            self.status_text = status
+            return status
         except Exception as e:
             self.connected = False
-            return f"Fehler: {e}"
+            status = f"Fehler: {e}"
+            self.status_text = status
+            return status
 
     def disconnect(self):
         self.connected = False
+        self.status_text = "Getrennt"
         if self.ws:
             try:
                 self.ws.close()
@@ -153,7 +163,7 @@ class FaceTracker:
         return max(0.02, min(delay, mean * 3))
 
     def run_loop(self):
-        """Main detection loop – call from a thread."""
+        """Main detection loop - call from a thread."""
         self.running = True
         actual_w = int(self.cap.get(cv2.CAP_PROP_FRAME_WIDTH))
         actual_h = int(self.cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
@@ -246,10 +256,10 @@ class FaceTracker:
                     self.face_rect = None
                     self.roi_active = False
 
-            # Store RGB frame for GUI preview
+            # Store display frame
             frame_small = cv2.resize(frame, (320, 240))
             with self._lock:
-                self.frame_rgb = cv2.cvtColor(frame_small, cv2.COLOR_BGR2RGB)
+                self.frame_display = frame_small.copy()
 
             time.sleep(self._poisson_delay())
 
@@ -258,227 +268,78 @@ class FaceTracker:
 
 
 # ---------------------------------------------------------------------------
-# GUI
+# OpenCV-based GUI
 # ---------------------------------------------------------------------------
 
-class MonitorApp:
-    def __init__(self, tracker: FaceTracker):
-        self.tracker = tracker
-        self.thread = None
+def draw_overlay(canvas, tracker):
+    """Draw HUD overlay with gaze data and status onto the canvas."""
+    h, w = canvas.shape[:2]
 
-        self.root = tk.Tk()
-        self.root.title("Tessella Face Tracker Monitor")
-        self.root.resizable(False, False)
-        self.root.configure(bg="#1a1a2e")
+    with tracker._lock:
+        detected = tracker.face_detected
+        gaze = tracker.current_gaze.copy()
+        roi = tracker.roi_active
 
-        style = ttk.Style()
-        style.theme_use("clam")
-        style.configure("TFrame", background="#1a1a2e")
-        style.configure("TLabel", background="#1a1a2e", foreground="#e0e0e0",
-                         font=("monospace", 10))
-        style.configure("Header.TLabel", background="#1a1a2e", foreground="#00d4aa",
-                         font=("monospace", 12, "bold"))
-        style.configure("TButton", font=("monospace", 10))
-        style.configure("TEntry", font=("monospace", 10))
+    # Semi-transparent status bar at top
+    overlay = canvas.copy()
+    cv2.rectangle(overlay, (0, 0), (w, 30), (20, 20, 40), -1)
+    cv2.addWeighted(overlay, 0.7, canvas, 0.3, 0, canvas)
 
-        self._build_ui()
-        self._update_loop()
+    # Title
+    cv2.putText(canvas, "TESSELLA FACE TRACKER", (6, 20),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 212, 170), 1)
 
-    def _build_ui(self):
-        root = self.root
-        pad = {"padx": 6, "pady": 3}
+    # Connection status
+    conn_color = (0, 212, 170) if tracker.connected else (107, 107, 255)
+    cv2.putText(canvas, tracker.status_text, (200, 20),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.35, conn_color, 1)
 
-        # -- Header
-        ttk.Label(root, text="TESSELLA FACE TRACKER", style="Header.TLabel"
-                  ).pack(pady=(10, 5))
+    # Semi-transparent bottom bar
+    overlay = canvas.copy()
+    cv2.rectangle(overlay, (0, h - 50), (w, h), (20, 20, 40), -1)
+    cv2.addWeighted(overlay, 0.7, canvas, 0.3, 0, canvas)
 
-        # -- Connection frame
-        conn_frame = ttk.Frame(root)
-        conn_frame.pack(fill="x", **pad)
+    # Face detection indicator
+    dot_color = (0, 212, 170) if detected else (107, 107, 255)
+    cv2.circle(canvas, (12, h - 35), 5, dot_color, -1)
 
-        ttk.Label(conn_frame, text="Server:").grid(row=0, column=0, sticky="w")
-        self.server_var = tk.StringVar(value=self.tracker.server)
-        ttk.Entry(conn_frame, textvariable=self.server_var, width=18
-                  ).grid(row=0, column=1, padx=2)
+    # Gaze data
+    if detected:
+        gaze_text = f"X={gaze['x']:+.2f}  Y={gaze['y']:+.2f}  Z={gaze['z']:.1f}"
+    else:
+        gaze_text = "-- / -- / --"
+    cv2.putText(canvas, f"Gaze: {gaze_text}", (24, h - 30),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.38, (224, 224, 224), 1)
 
-        ttk.Label(conn_frame, text="Port:").grid(row=0, column=2, sticky="w", padx=(8, 0))
-        self.port_var = tk.StringVar(value=str(self.tracker.port))
-        ttk.Entry(conn_frame, textvariable=self.port_var, width=6
-                  ).grid(row=0, column=3, padx=2)
+    # ROI indicator
+    roi_text = "ROI" if roi else "FULL"
+    roi_color = (0, 212, 170) if roi else (136, 136, 136)
+    cv2.putText(canvas, roi_text, (280, h - 30),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.38, roi_color, 1)
 
-        self.conn_btn = ttk.Button(conn_frame, text="Verbinden", command=self._toggle_connect)
-        self.conn_btn.grid(row=0, column=4, padx=(8, 0))
+    # Gaze direction mini-visualisation (bottom-right)
+    viz_x, viz_y = w - 55, h - 45
+    viz_w, viz_h = 45, 35
+    cv2.rectangle(canvas, (viz_x, viz_y), (viz_x + viz_w, viz_y + viz_h),
+                  (50, 50, 50), 1)
+    # Crosshair
+    cx, cy = viz_x + viz_w // 2, viz_y + viz_h // 2
+    cv2.line(canvas, (cx, viz_y), (cx, viz_y + viz_h), (50, 50, 50), 1)
+    cv2.line(canvas, (viz_x, cy), (viz_x + viz_w, cy), (50, 50, 50), 1)
 
-        self.conn_status = ttk.Label(conn_frame, text="Getrennt", foreground="#ff6b6b")
-        self.conn_status.grid(row=1, column=0, columnspan=5, sticky="w", pady=(2, 0))
+    if detected:
+        dot_x = int(cx + (gaze["x"] / 3.0) * (viz_w // 2))
+        dot_y = int(cy - (gaze["y"] / 2.0) * (viz_h // 2))
+        dot_x = max(viz_x + 3, min(viz_x + viz_w - 3, dot_x))
+        dot_y = max(viz_y + 3, min(viz_y + viz_h - 3, dot_y))
+        cv2.circle(canvas, (dot_x, dot_y), 3, (0, 212, 170), -1)
+    else:
+        cv2.circle(canvas, (cx, cy), 3, (80, 80, 80), -1)
 
-        # -- Camera frame
-        cam_frame = ttk.Frame(root)
-        cam_frame.pack(fill="x", **pad)
+    # Key hints
+    cv2.putText(canvas, "[c]onnect [e]yeball [h]ide [q]uit", (6, h - 8),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.3, (120, 120, 120), 1)
 
-        ttk.Label(cam_frame, text="Kamera:").grid(row=0, column=0, sticky="w")
-        self.cam_var = tk.StringVar(value=str(self.tracker.camera_index))
-        ttk.Entry(cam_frame, textvariable=self.cam_var, width=4
-                  ).grid(row=0, column=1, padx=2)
-
-        ttk.Label(cam_frame, text="FPS:").grid(row=0, column=2, sticky="w", padx=(8, 0))
-        self.fps_var = tk.StringVar(value=str(self.tracker.fps))
-        ttk.Entry(cam_frame, textvariable=self.fps_var, width=4
-                  ).grid(row=0, column=3, padx=2)
-
-        self.start_btn = ttk.Button(cam_frame, text="Start Tracking", command=self._toggle_tracking)
-        self.start_btn.grid(row=0, column=4, padx=(8, 0))
-
-        # -- Preview canvas
-        self.canvas = tk.Canvas(root, width=320, height=240, bg="#000000",
-                                highlightthickness=1, highlightbackground="#333")
-        self.canvas.pack(**pad)
-        self._photo = None
-
-        # -- Gaze data display
-        data_frame = ttk.Frame(root)
-        data_frame.pack(fill="x", **pad)
-
-        self.face_indicator = tk.Canvas(data_frame, width=14, height=14,
-                                         bg="#1a1a2e", highlightthickness=0)
-        self.face_indicator.grid(row=0, column=0, padx=(0, 4))
-        self._indicator_circle = self.face_indicator.create_oval(2, 2, 12, 12, fill="#555")
-
-        self.gaze_label = ttk.Label(data_frame, text="Gaze: -- / -- / --")
-        self.gaze_label.grid(row=0, column=1, sticky="w")
-
-        self.roi_label = ttk.Label(data_frame, text="")
-        self.roi_label.grid(row=0, column=2, sticky="e", padx=(12, 0))
-
-        # -- Eyeball controls
-        eye_frame = ttk.Frame(root)
-        eye_frame.pack(fill="x", **pad)
-
-        ttk.Button(eye_frame, text="Eyeball anzeigen",
-                   command=lambda: self.tracker.send_show_eyeball()
-                   ).pack(side="left", padx=2)
-        ttk.Button(eye_frame, text="Eyeball ausblenden",
-                   command=lambda: self.tracker.send_hide_eyeball()
-                   ).pack(side="left", padx=2)
-
-        # -- Gaze visualization (small 2D indicator)
-        viz_frame = ttk.Frame(root)
-        viz_frame.pack(**pad)
-        ttk.Label(viz_frame, text="Blickrichtung:").pack(anchor="w")
-        self.gaze_canvas = tk.Canvas(viz_frame, width=160, height=120,
-                                      bg="#0d0d1a", highlightthickness=1,
-                                      highlightbackground="#333")
-        self.gaze_canvas.pack()
-        # Draw crosshair
-        self.gaze_canvas.create_line(80, 0, 80, 120, fill="#333")
-        self.gaze_canvas.create_line(0, 60, 160, 60, fill="#333")
-        self._gaze_dot = self.gaze_canvas.create_oval(75, 55, 85, 65, fill="#00d4aa")
-
-        # Padding at bottom
-        ttk.Label(root, text="").pack(pady=2)
-
-    # -- Actions ------------------------------------------------------------
-
-    def _toggle_connect(self):
-        if self.tracker.connected:
-            self.tracker.disconnect()
-            self.conn_btn.configure(text="Verbinden")
-            self.conn_status.configure(text="Getrennt", foreground="#ff6b6b")
-        else:
-            self.tracker.server = self.server_var.get()
-            self.tracker.port = int(self.port_var.get())
-            status = self.tracker.connect()
-            if self.tracker.connected:
-                self.conn_btn.configure(text="Trennen")
-                clients = self.tracker.client_count
-                self.conn_status.configure(
-                    text=f"Verbunden ({clients} Client{'s' if clients != 1 else ''})",
-                    foreground="#00d4aa",
-                )
-            else:
-                self.conn_status.configure(text=status, foreground="#ff6b6b")
-
-    def _toggle_tracking(self):
-        if self.tracker.running:
-            self.tracker.stop()
-            if self.thread:
-                self.thread.join(timeout=2)
-                self.thread = None
-            self.tracker.close_camera()
-            self.start_btn.configure(text="Start Tracking")
-        else:
-            self.tracker.camera_index = int(self.cam_var.get())
-            self.tracker.fps = int(self.fps_var.get())
-            if not self.tracker.open_camera():
-                self.conn_status.configure(text="Kamera-Fehler!", foreground="#ff6b6b")
-                return
-            self.thread = threading.Thread(target=self.tracker.run_loop, daemon=True)
-            self.thread.start()
-            self.start_btn.configure(text="Stop Tracking")
-
-    # -- GUI update loop ----------------------------------------------------
-
-    def _update_loop(self):
-        with self.tracker._lock:
-            frame = self.tracker.frame_rgb
-            detected = self.tracker.face_detected
-            gaze = self.tracker.current_gaze.copy()
-            roi = self.tracker.roi_active
-
-        # Update preview
-        if frame is not None:
-            img = Image.fromarray(frame)
-            self._photo = ImageTk.PhotoImage(img)
-            self.canvas.create_image(0, 0, anchor="nw", image=self._photo)
-
-        # Face indicator
-        color = "#00d4aa" if detected else "#ff6b6b"
-        self.face_indicator.itemconfig(self._indicator_circle, fill=color)
-
-        # Gaze label
-        if detected:
-            self.gaze_label.configure(
-                text=f"Gaze: X={gaze['x']:+.2f}  Y={gaze['y']:+.2f}  Z={gaze['z']:.1f}"
-            )
-        else:
-            self.gaze_label.configure(text="Gaze: -- / -- / --")
-
-        # ROI label
-        self.roi_label.configure(
-            text="ROI" if roi else "FULL",
-            foreground="#00d4aa" if roi else "#888",
-        )
-
-        # Gaze dot visualization
-        if detected:
-            # gaze x is roughly -3..3, y is -2..2
-            dot_x = 80 + (gaze["x"] / 3.0) * 70
-            dot_y = 60 - (gaze["y"] / 2.0) * 50
-            dot_x = max(5, min(155, dot_x))
-            dot_y = max(5, min(115, dot_y))
-            self.gaze_canvas.coords(self._gaze_dot,
-                                     dot_x - 5, dot_y - 5, dot_x + 5, dot_y + 5)
-            self.gaze_canvas.itemconfig(self._gaze_dot, fill="#00d4aa")
-        else:
-            self.gaze_canvas.coords(self._gaze_dot, 75, 55, 85, 65)
-            self.gaze_canvas.itemconfig(self._gaze_dot, fill="#555")
-
-        self.root.after(50, self._update_loop)  # ~20 Hz GUI refresh
-
-    def run(self):
-        self.root.protocol("WM_DELETE_WINDOW", self._on_close)
-        self.root.mainloop()
-
-    def _on_close(self):
-        self.tracker.stop()
-        self.tracker.disconnect()
-        self.tracker.close_camera()
-        self.root.destroy()
-
-
-# ---------------------------------------------------------------------------
-# Main
-# ---------------------------------------------------------------------------
 
 def main():
     parser = argparse.ArgumentParser(description="Tessella Face Tracker Monitor")
@@ -494,8 +355,56 @@ def main():
     tracker.camera_index = args.camera
     tracker.fps = args.fps
 
-    app = MonitorApp(tracker)
-    app.run()
+    # Open camera
+    if not tracker.open_camera():
+        print(f"Fehler: Kamera {args.camera} konnte nicht geoeffnet werden.")
+        return
+
+    # Start tracking thread
+    track_thread = threading.Thread(target=tracker.run_loop, daemon=True)
+    track_thread.start()
+
+    window_name = "Tessella Face Tracker"
+    cv2.namedWindow(window_name, cv2.WINDOW_AUTOSIZE)
+
+    print("Tessella Face Tracker Monitor gestartet.")
+    print("Tasten: [c] Verbinden/Trennen  [e] Eyeball  [h] Eyeball aus  [q] Beenden")
+
+    try:
+        while True:
+            with tracker._lock:
+                frame = tracker.frame_display
+            if frame is not None:
+                canvas = frame.copy()
+            else:
+                canvas = np.zeros((240, 320, 3), dtype=np.uint8)
+
+            draw_overlay(canvas, tracker)
+            cv2.imshow(window_name, canvas)
+
+            key = cv2.waitKey(50) & 0xFF
+
+            if key == ord("q"):
+                break
+            elif key == ord("c"):
+                if tracker.connected:
+                    tracker.disconnect()
+                    print("Getrennt.")
+                else:
+                    status = tracker.connect()
+                    print(status)
+            elif key == ord("e"):
+                tracker.send_show_eyeball()
+                print("Eyeball anzeigen gesendet.")
+            elif key == ord("h"):
+                tracker.send_hide_eyeball()
+                print("Eyeball ausblenden gesendet.")
+    finally:
+        tracker.stop()
+        track_thread.join(timeout=2)
+        tracker.disconnect()
+        tracker.close_camera()
+        cv2.destroyAllWindows()
 
 
 if __name__ == "__main__":
