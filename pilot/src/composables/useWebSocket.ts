@@ -10,10 +10,38 @@ export interface LogEntry {
   message: string
 }
 
+export interface PrecomposedSlot {
+  id: string
+  name: string
+  assignedClientId: number | null
+  content: Record<string, unknown>[]
+  bgColor: string
+  displayConfig: {
+    x: number
+    y: number
+    z: number
+    rotation: number
+  } | null
+}
+
+export interface PrecomposeLayout {
+  id: string
+  name: string
+  slots: PrecomposedSlot[]
+  createdAt: string
+  assignmentMode: 'auto' | 'manual'
+}
+
+export interface PrecomposeStatus {
+  layout: PrecomposeLayout | null
+  active: boolean
+}
+
 const ws = ref<WebSocket | null>(null)
 const connected = ref(false)
 const clients = ref<Client[]>([])
 const logs = ref<LogEntry[]>([])
+const precomposeStatus = ref<PrecomposeStatus>({ layout: null, active: false })
 
 export function useWebSocket() {
   function connect() {
@@ -40,6 +68,8 @@ export function useWebSocket() {
         if (msg.type === 'client-list') {
           clients.value = msg.clients
           log(`${msg.clients.length} Display(s) verbunden`)
+        } else if (msg.type === 'precompose-status') {
+          precomposeStatus.value = { layout: msg.layout, active: msg.active }
         }
       } catch (e) {
         console.error('Parse error:', e)
@@ -79,6 +109,7 @@ export function useWebSocket() {
     connected,
     clients,
     logs,
+    precomposeStatus,
     send,
     log,
     clearLogs,

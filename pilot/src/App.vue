@@ -11,13 +11,14 @@ import BackgroundPanel from '@/components/panels/BackgroundPanel.vue'
 import EffectsPanel from '@/components/panels/EffectsPanel.vue'
 import { Button } from '@/components/ui/button'
 import ScenesPanel from '@/components/panels/ScenesPanel.vue'
+import PrecomposePanel from '@/components/panels/PrecomposePanel.vue'
 import ActivityLog from '@/components/panels/ActivityLog.vue'
 
-const { connected, clients, logs, send, log, clearLogs } = useWebSocket()
+const { connected, clients, logs, precomposeStatus, send, log, clearLogs } = useWebSocket()
 const { theme, toggleTheme } = useTheme()
 
 const selectedTarget = ref<number | 'all'>('all')
-const footerTab = ref<'scenes' | 'logs'>('scenes')
+const footerTab = ref<'scenes' | 'precompose' | 'logs'>('scenes')
 const formKey = ref(0)
 
 function handleSceneCaptured() {
@@ -94,6 +95,7 @@ onUnmounted(() => {
         <ClientList
           :clients="clients"
           v-model:selectedTarget="selectedTarget"
+          :precomposeStatus="precomposeStatus"
         />
       </aside>
 
@@ -157,6 +159,13 @@ onUnmounted(() => {
         </button>
         <button
           class="px-3 py-1.5 text-sm font-medium rounded-t-md transition-colors"
+          :class="footerTab === 'precompose' ? 'bg-background border border-b-0 border-border text-foreground' : 'text-muted-foreground hover:text-foreground'"
+          @click="footerTab = 'precompose'"
+        >
+          Precompose
+        </button>
+        <button
+          class="px-3 py-1.5 text-sm font-medium rounded-t-md transition-colors"
           :class="footerTab === 'logs' ? 'bg-background border border-b-0 border-border text-foreground' : 'text-muted-foreground hover:text-foreground'"
           @click="footerTab = 'logs'"
         >
@@ -171,6 +180,15 @@ onUnmounted(() => {
           @send="handleSend"
           @log="handleLog"
           @captured="handleSceneCaptured"
+        />
+        <PrecomposePanel
+          v-if="footerTab === 'precompose'"
+          :selectedTarget="selectedTarget"
+          :clients="clients"
+          :precomposeStatus="precomposeStatus"
+          @send="handleSend"
+          @log="handleLog"
+          @update:selectedTarget="selectedTarget = $event"
         />
         <ActivityLog
           v-if="footerTab === 'logs'"
