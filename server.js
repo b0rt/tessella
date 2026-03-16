@@ -250,6 +250,7 @@ const clientServer = http.createServer((req, res) => {
       else if (item.type === "show-image") item.type = "send-image";
       else if (item.type === "show-tiled-image") item.type = "send-tiled-image";
       else if (item.type === "show-video") item.type = "send-video";
+      else if (item.type === "show-eyeball") item.type = "send-eyeball";
       items.push(item);
     }
 
@@ -750,13 +751,16 @@ function handlePilotMessage(msg) {
       break;
     }
 
+    case "send-eyeball":
     case "show-eyeball": {
       const content = {
         type: "show-eyeball",
         target: msg.target || "all",
         irisColor: msg.irisColor,
-        bgColor: msg.bgColor
+        bgColor: msg.bgColor,
+        id: Date.now()
       };
+      contentHistory.push(content);
       broadcastToClients(content);
       console.log(`👁️  Eyeball activated on ${msg.target || "all"}`);
       break;
